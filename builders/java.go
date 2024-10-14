@@ -34,15 +34,7 @@ func (j *JavaBuilder) Build(module *project.Module, ctx project.BuildContext) er
 		return fmt.Errorf("%s only allowed with %s %s", PropertyMainClass, PropertyOutputType, OutputTypeExeJar)
 	}
 	extraFlags := module.GetProperty(PropertyCompilerFlags, "")
-	timestampString := module.GetProperty(PropertyJarDate, "")
-	jarTime := time.Now()
-	var err error
-	if timestampString != "" {
-		jarTime, err = time.Parse(time.RFC3339, timestampString)
-		if err != nil {
-			return fmt.Errorf("error parsing JarDate %s: %s (use format %s)", timestampString, err.Error(), time.RFC3339)
-		}
-	}
+	jarDate := module.GetProperty(PropertyJarDate, "")
 
 	sources, err := module.FindFilesBySuffixR(".java")
 	if err != nil {
@@ -99,13 +91,30 @@ func (j *JavaBuilder) Build(module *project.Module, ctx project.BuildContext) er
 	cmd.Dir = module.ModuleDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
 	err = cmd.Run()
 	if err != nil {
 		return err
 	}
 
+	// Build into .jar
 	jarpath := filepath.Join(buildDir, module.Name+".jar")
-	return createJar(jarpath, buildClasses, jarTime)
+	jarArgs := []string{
+		"--create", "--file", jarpath,
+	}
+	if jarDate != "" {
+		jarArgs = append(jarArgs, "--date", jarDate)
+	}
+	if mainClass != "" {
+		jarArgs = append(jarArgs, "--main-class", mainClass)
+	}
+	jarArgs = append(jarArgs, "-C", buildClasses, ".")
+	cmd = exec.Command("jar", jarArgs...)
+	fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err = cmd.Run()
+	return err
 }
 
 // Function to create a zipfile given a path
