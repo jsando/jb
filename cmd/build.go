@@ -21,7 +21,12 @@ var BuildCmd = &cobra.Command{
 		if len(args) > 0 {
 			path = args[0]
 		}
-		err := doBuild(path)
+		module, err := loadModule(path)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		err = doBuild(module)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "build encountered an error: %s\n", err.Error())
 			os.Exit(1)
@@ -29,18 +34,18 @@ var BuildCmd = &cobra.Command{
 	},
 }
 
-func init() {
-
-}
-
-func doBuild(path string) error {
-	module, err := project.LoadModule(path)
-	if err != nil {
-		return err
-	}
+func doBuild(module *project.Module) error {
 	builder, err := builders.GetBuilder(module.SDK)
 	if err != nil {
 		return err
 	}
 	return builder.Build(module, project.BuildContext{})
+}
+
+func loadModule(path string) (*project.Module, error) {
+	module, err := project.LoadModule(path)
+	if err != nil {
+		return nil, err
+	}
+	return module, nil
 }

@@ -45,6 +45,6 @@ func init() {
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 
 	rootCmd.AddCommand(BuildCmd)
-
+	rootCmd.AddCommand(RunCmd)
 	//rootCmd.AddCommand(packages.PackageCmd)
 }

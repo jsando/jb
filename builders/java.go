@@ -1,18 +1,34 @@
 package builders
 
 import (
-	"archive/zip"
 	"fmt"
 	"github.com/jsando/jb/project"
-	"io"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"time"
 )
 
 type JavaBuilder struct {
+}
+
+func (j *JavaBuilder) Run(module *project.Module, progArgs []string) error {
+	jarPath := j.getModuleJarPath(module)
+	args := []string{"-jar", jarPath}
+	args = append(args, progArgs...)
+	cmd := exec.Command("java", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
+	err := cmd.Run()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (j *JavaBuilder) getModuleJarPath(module *project.Module) string {
+	buildDir := filepath.Join(module.ModuleDir, "build")
+	return filepath.Join(buildDir, module.Name+".jar")
 }
 
 const (
@@ -114,63 +130,5 @@ func (j *JavaBuilder) Build(module *project.Module, ctx project.BuildContext) er
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err = cmd.Run()
-	return err
-}
-
-// Function to create a zipfile given a path
-func createJar(jarname string, basedir string, jarTime time.Time) error {
-	// Create the zip file
-	zipFile, err := os.Create(jarname)
-	if err != nil {
-		return err
-	}
-	defer zipFile.Close()
-
-	// Create a new zip writer
-	zipWriter := zip.NewWriter(zipFile)
-	defer zipWriter.Close()
-
-	// Walk through the directory and add files to the zip
-	err = filepath.Walk(basedir, func(path string, info fs.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		relPath, err := filepath.Rel(basedir, path)
-		if err != nil {
-			return err
-		}
-
-		// Create a zip header for the file entry
-		zipHeader, err := zip.FileInfoHeader(info)
-		if err != nil {
-			return err
-		}
-
-		// Set the name and modified time on the header for reproducibility
-		if info.IsDir() {
-			relPath += "/"
-		}
-		zipHeader.Name = relPath
-		zipHeader.Method = zip.Deflate
-		zipHeader.Modified = jarTime
-
-		// Create the file in the zip archive
-		zipWriterEntry, err := zipWriter.CreateHeader(zipHeader)
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-
-		// Copy the file content to the zip entry
-		file, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		_, err = io.Copy(zipWriterEntry, file)
-		return err
-	})
 	return err
 }
