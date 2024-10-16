@@ -8,17 +8,27 @@ import (
 	"github.com/jsando/jb/builders"
 	"github.com/spf13/cobra"
 	"os"
-	"slices"
 )
 
 var RunCmd = &cobra.Command{
 	Use:   "run [path]",
 	Short: "Run a executable jar module, use '--' to separate program args",
 	Run: func(cmd *cobra.Command, args []string) {
-		baseArgs, progArgs, err := parseArgs(args)
+		baseArgs := args
+		progArgs := []string{}
+		dash := cmd.ArgsLenAtDash()
+		if dash > 0 {
+			baseArgs = args[:dash]
+			progArgs = args[dash:]
+		}
+
 		path := "."
 		if len(baseArgs) > 0 {
 			path = baseArgs[0]
+		}
+		if len(baseArgs) > 1 {
+			fmt.Fprintf(os.Stderr, "error: too many arguments (hint: use '--' to separate program args)\n")
+			os.Exit(1)
 		}
 		module, err := loadModule(path)
 		if err != nil {
@@ -41,16 +51,4 @@ var RunCmd = &cobra.Command{
 			os.Exit(1)
 		}
 	},
-}
-
-func parseArgs(args []string) (baseArgs []string, progArgs []string, err error) {
-	i := slices.Index(args, "--")
-	if i == -1 {
-		baseArgs = args
-		progArgs = []string{}
-	} else {
-		baseArgs = args[:i]
-		progArgs = args[i+1:]
-	}
-	return
 }
