@@ -2,40 +2,56 @@ package project
 
 import (
 	"encoding/xml"
+	"errors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
-type Module struct {
-	ModuleFile string     `xml:"-"`        // Absolute path to jbm file
-	ModuleDir  string     `xml:"-"`        // Absolute path to module directory
-	Name       string     `xml:"-"`        // Module name (ie the dir name)
-	SDK        string     `xml:"Sdk,attr"` // Name of dev kit (ie, which builder to use)
-	Properties Properties `xml:"Properties"`
+type ModuleLoader struct {
+	modules map[string]*Module
 }
 
-type Properties struct {
-	Properties []Property `xml:",any"` // Collection of key/value pairs to pass to builder
-}
-
-type Property struct {
-	XMLName xml.Name
-	Value   string `xml:",chardata"`
-}
-
-type SourceFileInfo struct {
-	Info os.FileInfo
-	Path string // path relative to module root
-}
-
-func LoadModule(modulePath string) (*Module, error) {
-	var err error
-	modulePath, err = filepath.Abs(modulePath)
-	if err != nil {
-		return nil, err
+func NewModuleLoader() *ModuleLoader {
+	return &ModuleLoader{
+		modules: make(map[string]*Module),
 	}
+}
+
+func (l *ModuleLoader) GetModule(path string) (*Module, error) {
+	var err error
+	if !filepath.IsAbs(path) {
+		return nil, errors.New("path must be absolute")
+	}
+	module := l.modules[path]
+	if module == nil {
+		module, err = l.loadModule(path)
+		if err != nil {
+			return nil, err
+		}
+		l.modules[module.Name] = module
+		if module.References.Modules == nil {
+			module.References.Modules = make([]*ModuleReference, 0)
+		}
+
+		// Load module references
+		// TODO erm .. how to detect circular reference?
+		for _, ref := range module.References.Modules {
+			refPath := filepath.Join(module.ModuleDir, ref.Path)
+			refModule, err := l.GetModule(refPath)
+			if err != nil {
+				return module, err
+			}
+			ref.Module = refModule
+		}
+	}
+	return module, nil
+}
+
+func (l *ModuleLoader) loadModule(modulePath string) (*Module, error) {
+	var err error
 	info, err := os.Stat(modulePath)
 	if err != nil {
 		return nil, err
@@ -54,7 +70,10 @@ func LoadModule(modulePath string) (*Module, error) {
 	if err != nil {
 		return nil, err
 	}
-	var module Module
+	// todo verify schema and give hints if errors found
+	// a) verify all parameters
+	// b) does go return an error if nothing mapped?
+	var module = Module{}
 	err = xml.Unmarshal(data, &module)
 	if err != nil {
 		return nil, err
@@ -62,7 +81,50 @@ func LoadModule(modulePath string) (*Module, error) {
 	module.ModuleFile = modulePath
 	module.ModuleDir = filepath.Dir(modulePath)
 	module.Name = filepath.Base(module.ModuleDir)
+	if module.References == nil {
+		module.References = &References{
+			Modules: make([]*ModuleReference, 0),
+		}
+	}
+	if module.Properties == nil {
+		module.Properties = &Properties{
+			Properties: make([]Property, 0),
+		}
+	}
 	return &module, nil
+}
+
+type Module struct {
+	XMLName    xml.Name    `xml:"Module"`
+	ModuleFile string      `xml:"-"`        // Absolute path to jbm file
+	ModuleDir  string      `xml:"-"`        // Absolute path to module directory
+	Name       string      `xml:"-"`        // Simple module name (ie the dir name)
+	SDK        string      `xml:"Sdk,attr"` // Name of dev kit (which builder to use)
+	Properties *Properties `xml:"Properties"`
+	References *References `xml:"References"`
+}
+
+type Properties struct {
+	Properties []Property `xml:",any"` // Collection of key/value pairs to pass to builder
+}
+
+type Property struct {
+	XMLName xml.Name
+	Value   string `xml:",chardata"`
+}
+
+type References struct {
+	Modules []*ModuleReference `xml:"Module"`
+}
+
+type ModuleReference struct {
+	Path   string  `xml:"Path,attr"`
+	Module *Module `xml:"-"`
+}
+
+type SourceFileInfo struct {
+	Info os.FileInfo
+	Path string // path relative to module root
 }
 
 func (m *Module) FindFilesBySuffixR(suffix string) ([]SourceFileInfo, error) {
@@ -95,4 +157,58 @@ func (m *Module) GetProperty(key, defaultValue string) string {
 		}
 	}
 	return value
+}
+
+func (m *Module) Build() error {
+	// build dependencies of this module first, in the right order
+	deps, err := m.ResolveReferences()
+	if err != nil {
+		return err
+	}
+	for _, dep := range deps {
+		err = dep.Build()
+		if err != nil {
+			return err
+		}
+	}
+
+	// Build this module
+	builder, err := GetBuilder(m.SDK)
+	if err != nil {
+		return err
+	}
+	return builder.Build(m)
+}
+
+func (m *Module) Run(progArgs []string) error {
+	builder, err := GetBuilder(m.SDK)
+	if err != nil {
+		return err
+	}
+	return builder.Run(m, progArgs)
+}
+
+func (m *Module) ResolveReferences() ([]*Module, error) {
+	visited := make(map[*Module]bool)
+	result := []*Module{}
+	for _, dep := range m.References.Modules {
+		if !visited[dep.Module] {
+			topologicalSort(dep.Module, visited, &result)
+		}
+	}
+	slices.Reverse(result)
+	return result, nil
+}
+
+// topologicalSort sorts the projects in the order they should be built.
+// It performs a depth-first search and adds each project to the result after all its dependencies.
+func topologicalSort(module *Module, visited map[*Module]bool, result *[]*Module) {
+	if visited[module] {
+		return
+	}
+	visited[module] = true
+	for _, dep := range module.References.Modules {
+		topologicalSort(dep.Module, visited, result)
+	}
+	*result = append(*result, module)
 }

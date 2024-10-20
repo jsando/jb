@@ -1,8 +1,8 @@
-package builders
+package project
 
 import (
 	"fmt"
-	"github.com/jsando/jb/project"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,7 +11,7 @@ import (
 type JavaBuilder struct {
 }
 
-func (j *JavaBuilder) Run(module *project.Module, progArgs []string) error {
+func (j *JavaBuilder) Run(module *Module, progArgs []string) error {
 	jarPath := j.getModuleJarPath(module)
 	args := []string{"-jar", jarPath}
 	args = append(args, progArgs...)
@@ -26,7 +26,7 @@ func (j *JavaBuilder) Run(module *project.Module, progArgs []string) error {
 	return nil
 }
 
-func (j *JavaBuilder) getModuleJarPath(module *project.Module) string {
+func (j *JavaBuilder) getModuleJarPath(module *Module) string {
 	buildDir := filepath.Join(module.ModuleDir, "build")
 	return filepath.Join(buildDir, module.Name+".jar")
 }
@@ -40,7 +40,7 @@ const (
 	OutputTypeExeJar      = "ExecutableJar"
 )
 
-func (j *JavaBuilder) Build(module *project.Module, ctx project.BuildContext) error {
+func (j *JavaBuilder) Build(module *Module) error {
 	outputType := module.GetProperty(PropertyOutputType, OutputTypeJar)
 	mainClass := module.GetProperty(PropertyMainClass, "")
 	if outputType == OutputTypeExeJar && len(mainClass) == 0 {
@@ -82,13 +82,31 @@ func (j *JavaBuilder) Build(module *project.Module, ctx project.BuildContext) er
 	}
 	sourcefilesFile.Close()
 
+	// For compilation, use the absolute paths to all jar dependencies
+	classPath := ""
+	deps, err := module.ResolveReferences()
+	if err != nil {
+		return err
+	}
+	if len(deps) > 0 {
+		for _, dep := range deps {
+			if len(classPath) > 0 {
+				classPath += string(os.PathListSeparator)
+			}
+			jarPath := j.getModuleJarPath(dep)
+			classPath += jarPath
+		}
+		classPath = "--class-path " + classPath
+	}
+
 	optionsPath := filepath.Join(buildTmpDir, "options.txt")
 	optionsFile, err := os.Create(optionsPath)
 	rel, err := filepath.Rel(module.ModuleDir, buildClasses)
 	_, err = optionsFile.WriteString(fmt.Sprintf(`
 -d %s
 %s
-`, rel, extraFlags))
+%s
+`, rel, extraFlags, classPath))
 	optionsFile.Close()
 	if err != nil {
 		return err
@@ -121,8 +139,32 @@ func (j *JavaBuilder) Build(module *project.Module, ctx project.BuildContext) er
 	if jarDate != "" {
 		jarArgs = append(jarArgs, "--date", jarDate)
 	}
+	// If executable jar, gather all dependencies and append with relative path to main jar to 'ClassPath' in manifest
 	if mainClass != "" {
 		jarArgs = append(jarArgs, "--main-class", mainClass)
+
+		manifestClasspath := ""
+		for _, dep := range deps {
+			depJarPath := j.getModuleJarPath(dep)
+			jarName := filepath.Base(depJarPath)
+			manifestClasspath += jarName + " "
+			err = copyFile(depJarPath, filepath.Join(buildDir, jarName))
+		}
+		if len(manifestClasspath) > 0 {
+			manifestPath := filepath.Join(buildTmpDir, "manifest")
+			manifestFile, err := os.Create(manifestPath)
+			if err != nil {
+				return err
+			}
+			_, err = manifestFile.WriteString(fmt.Sprintf(`Manifest-Version: 1.0
+Class-Path: %s
+`, manifestClasspath))
+			manifestFile.Close()
+			if err != nil {
+				return err
+			}
+			jarArgs = append(jarArgs, "--manifest", manifestPath)
+		}
 	}
 	jarArgs = append(jarArgs, "-C", buildClasses, ".")
 	cmd = exec.Command("jar", jarArgs...)
@@ -130,5 +172,25 @@ func (j *JavaBuilder) Build(module *project.Module, ctx project.BuildContext) er
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	err = cmd.Run()
+	return err
+}
+
+func copyFile(src, dst string) error {
+	// Open the source file
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	// Create the destination file
+	destinationFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destinationFile.Close()
+
+	// Copy the contents from source to destination
+	_, err = io.Copy(destinationFile, sourceFile)
 	return err
 }

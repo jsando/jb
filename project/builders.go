@@ -1,11 +1,10 @@
-package builders
+package project
 
 import (
 	"fmt"
-	"github.com/jsando/jb/project"
 )
 
-func GetBuilder(name string) (project.Builder, error) {
+func GetBuilder(name string) (Builder, error) {
 	switch name {
 	case "Java":
 		return &JavaBuilder{}, nil

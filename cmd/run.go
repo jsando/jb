@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/jsando/jb/builders"
 	"github.com/spf13/cobra"
 	"os"
 )
@@ -35,17 +34,12 @@ var RunCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		err = doBuild(module)
+		err = module.Build()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "build encountered an error: %s\n", err.Error())
 			os.Exit(1)
 		}
-		builder, err := builders.GetBuilder(module.SDK)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "build encountered an error: %s\n", err.Error())
-			os.Exit(1)
-		}
-		err = builder.Run(module, progArgs)
+		err = module.Run(progArgs)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error running module: %s\n", err.Error())
 			os.Exit(1)

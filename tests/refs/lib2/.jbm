@@ -1,0 +1,8 @@
+<Module Sdk="Java">
+    <Properties>
+        <OutputType>ExecutableJar</OutputType>
+        <MainClass>example.Hello</MainClass>
+        <CompilerFlags>-Werror -g</CompilerFlags>
+        <JarDate>2022-02-12T12:30:00-05:00</JarDate>
+    </Properties>
+</Module>

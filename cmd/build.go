@@ -5,10 +5,10 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/jsando/jb/builders"
 	"github.com/jsando/jb/project"
 	"github.com/spf13/cobra"
 	"os"
+	"path/filepath"
 )
 
 // BuildCmd represents the build command
@@ -26,7 +26,7 @@ var BuildCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		err = doBuild(module)
+		err = module.Build()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "build encountered an error: %s\n", err.Error())
 			os.Exit(1)
@@ -34,16 +34,10 @@ var BuildCmd = &cobra.Command{
 	},
 }
 
-func doBuild(module *project.Module) error {
-	builder, err := builders.GetBuilder(module.SDK)
-	if err != nil {
-		return err
-	}
-	return builder.Build(module, project.BuildContext{})
-}
-
 func loadModule(path string) (*project.Module, error) {
-	module, err := project.LoadModule(path)
+	path, err := filepath.Abs(path)
+	loader := project.NewModuleLoader()
+	module, err := loader.GetModule(path)
 	if err != nil {
 		return nil, err
 	}
