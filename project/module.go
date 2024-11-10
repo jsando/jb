@@ -102,6 +102,7 @@ type Module struct {
 	SDK        string      `xml:"Sdk,attr"` // Name of dev kit (which builder to use)
 	Properties *Properties `xml:"Properties"`
 	References *References `xml:"References"`
+	Packages   *Packages   `xml:"Packages"`
 }
 
 type Properties struct {
@@ -120,6 +121,14 @@ type References struct {
 type ModuleReference struct {
 	Path   string  `xml:"Path,attr"`
 	Module *Module `xml:"-"`
+}
+
+type Packages struct {
+	References []*PackageReference `xml:"Package"`
+}
+
+type PackageReference struct {
+	URL string `xml:"URL,attr"`
 }
 
 type SourceFileInfo struct {
