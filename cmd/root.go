@@ -4,6 +4,7 @@ Copyright © 2024 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
+	"github.com/jsando/jb/cmd/packages"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -46,5 +47,5 @@ func init() {
 
 	rootCmd.AddCommand(BuildCmd)
 	rootCmd.AddCommand(RunCmd)
-	//rootCmd.AddCommand(packages.PackageCmd)
+	rootCmd.AddCommand(packages.PackageCmd)
 }

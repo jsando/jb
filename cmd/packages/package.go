@@ -23,4 +23,5 @@ func init() {
 	// Here you will define your flags and configuration settings.
 	PackageCmd.AddCommand(removeCmd)
 	PackageCmd.AddCommand(addCmd)
+	PackageCmd.AddCommand(treeCmd)
 }

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -42,7 +44,7 @@ func NewJarCache() *JarCache {
 	}
 }
 
-func gav(groupID, artifactID, version string) string {
+func GAV(groupID, artifactID, version string) string {
 	return groupID + ":" + artifactID + ":" + version
 }
 
@@ -64,11 +66,15 @@ func (jc *JarCache) artifactDir(groupID, artifactID, version string) string {
 	groupIDWithSlashes := strings.ReplaceAll(groupID, ".", "/")
 	relPath := filepath.Join(filepath.SplitList(groupIDWithSlashes)...)
 	relPath = filepath.Join(relPath, artifactID, version)
-	return filepath.Join(jc.baseDir, relPath)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		panic(err)
+	}
+	return filepath.Join(strings.ReplaceAll(jc.baseDir, "~", homeDir), relPath)
 }
 
 func (c *JarCache) GetPOM(groupID, artifactID, version string) (POM, error) {
-	gav := gav(groupID, artifactID, version)
+	gav := GAV(groupID, artifactID, version)
 	pom, found := c.poms[gav]
 	if found {
 		return pom, nil
@@ -101,7 +107,12 @@ func (c *JarCache) GetFile(groupID, artifactID, version, file string) (string, e
 	_, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			outFile, err := os.OpenFile(path, os.O_CREATE, 0600)
+			err := os.MkdirAll(filepath.Dir(path), 0755)
+			fmt.Printf("mkdir -p %s\n", filepath.Dir(path))
+			if err != nil {
+				return "", err
+			}
+			outFile, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0600)
 			defer outFile.Close()
 			if err != nil {
 				return path, err
@@ -111,11 +122,14 @@ func (c *JarCache) GetFile(groupID, artifactID, version, file string) (string, e
 				if err == nil {
 					break
 				}
+				fmt.Printf("error fetching from maven %s: %s\n", remote, err.Error())
 			}
 			// not found ... delete empty file and return error
-			outFile.Close()
-			os.Remove(path)
-			return path, fmt.Errorf("failed to fetch %s from any remote", path)
+			if err != nil {
+				outFile.Close()
+				os.Remove(path)
+				return path, fmt.Errorf("failed to fetch %s from any remote", path)
+			}
 		}
 	}
 	return path, err
@@ -123,24 +137,25 @@ func (c *JarCache) GetFile(groupID, artifactID, version, file string) (string, e
 
 func fetchFromMaven(mavenBaseURL string, groupID, artifactID, version, file string, out io.Writer) error {
 	groupIDWithSlashes := strings.ReplaceAll(groupID, ".", "/")
-	jarURL := fmt.Sprintf("%s/%s/%s/%s/%s",
-		mavenBaseURL,
-		filepath.Join(filepath.SplitList(groupIDWithSlashes)...),
-		artifactID,
-		version,
-		file,
-	)
-	resp, err := http.Get(jarURL)
+	u, err := url.Parse(mavenBaseURL)
 	if err != nil {
-		return fmt.Errorf("error downloading %s: %v", jarURL, err)
+		return fmt.Errorf("failed to parse maven URL: %w", err)
+	}
+	u.Path = path.Join(u.Path, filepath.Join(filepath.SplitList(groupIDWithSlashes)...), artifactID, version, file)
+	fileURL := u.String()
+	fmt.Printf("Fetching %s\n", fileURL)
+	resp, err := http.Get(fileURL)
+	if err != nil {
+		return fmt.Errorf("error downloading %s: %v", fileURL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download %s: %s", jarURL, resp.Status)
+		return fmt.Errorf("failed to download %s: %s", fileURL, resp.Status)
 	}
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
-		return fmt.Errorf("error saving %s: %v", jarURL, err)
+		return fmt.Errorf("error saving %s: %v", fileURL, err)
 	}
+	fmt.Printf("Successfully downloaded %s\n", fileURL)
 	return nil
 }

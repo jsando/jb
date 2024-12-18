@@ -10,6 +10,48 @@ import (
 	"strings"
 )
 
+type Module struct {
+	XMLName    xml.Name    `xml:"Module"`
+	ModuleFile string      `xml:"-"`        // Absolute path to jbm file
+	ModuleDir  string      `xml:"-"`        // Absolute path to module directory
+	Name       string      `xml:"-"`        // Simple module name (ie the dir name)
+	SDK        string      `xml:"Sdk,attr"` // Name of dev kit (which builder to use)
+	Properties *Properties `xml:"Properties"`
+	References *References `xml:"References"`
+	Packages   *Packages   `xml:"Packages"`
+}
+
+type Properties struct {
+	Properties []Property `xml:",any"` // Collection of key/value pairs to pass to builder
+}
+
+type Property struct {
+	XMLName xml.Name
+	Value   string `xml:",chardata"`
+}
+
+type References struct {
+	Modules []*ModuleReference `xml:"Module"`
+}
+
+type ModuleReference struct {
+	Path   string  `xml:"Path,attr"`
+	Module *Module `xml:"-"`
+}
+
+type Packages struct {
+	References []*PackageReference `xml:"Package"`
+}
+
+type PackageReference struct {
+	URL string `xml:"URL,attr"`
+}
+
+type SourceFileInfo struct {
+	Info os.FileInfo
+	Path string // path relative to module root
+}
+
 type ModuleLoader struct {
 	modules map[string]*Module
 }
@@ -94,48 +136,6 @@ func (l *ModuleLoader) loadModule(modulePath string) (*Module, error) {
 	return &module, nil
 }
 
-type Module struct {
-	XMLName    xml.Name    `xml:"Module"`
-	ModuleFile string      `xml:"-"`        // Absolute path to jbm file
-	ModuleDir  string      `xml:"-"`        // Absolute path to module directory
-	Name       string      `xml:"-"`        // Simple module name (ie the dir name)
-	SDK        string      `xml:"Sdk,attr"` // Name of dev kit (which builder to use)
-	Properties *Properties `xml:"Properties"`
-	References *References `xml:"References"`
-	Packages   *Packages   `xml:"Packages"`
-}
-
-type Properties struct {
-	Properties []Property `xml:",any"` // Collection of key/value pairs to pass to builder
-}
-
-type Property struct {
-	XMLName xml.Name
-	Value   string `xml:",chardata"`
-}
-
-type References struct {
-	Modules []*ModuleReference `xml:"Module"`
-}
-
-type ModuleReference struct {
-	Path   string  `xml:"Path,attr"`
-	Module *Module `xml:"-"`
-}
-
-type Packages struct {
-	References []*PackageReference `xml:"Package"`
-}
-
-type PackageReference struct {
-	URL string `xml:"URL,attr"`
-}
-
-type SourceFileInfo struct {
-	Info os.FileInfo
-	Path string // path relative to module root
-}
-
 func (m *Module) FindFilesBySuffixR(suffix string) ([]SourceFileInfo, error) {
 	var sources []SourceFileInfo
 	err := filepath.Walk(m.ModuleDir, func(path string, info os.FileInfo, err error) error {
@@ -166,6 +166,15 @@ func (m *Module) GetProperty(key, defaultValue string) string {
 		}
 	}
 	return value
+}
+
+func (m *Module) ResolveDependencies() ([]PackageDependency, error) {
+	builder, err := GetBuilder(m.SDK)
+	if err != nil {
+		return nil, err
+	}
+	return builder.ResolveDependencies(m)
+
 }
 
 func (m *Module) Build() error {

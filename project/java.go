@@ -2,13 +2,31 @@ package project
 
 import (
 	"fmt"
+	"github.com/jsando/jb/artifact"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+)
+
+const (
+	PropertyOutputType    = "OutputType"
+	PropertyMainClass     = "MainClass"
+	PropertyCompilerFlags = "CompilerFlags"
+	PropertyJarDate       = "JarDate"
+	OutputTypeJar         = "Jar"
+	OutputTypeExeJar      = "ExecutableJar"
 )
 
 type JavaBuilder struct {
+	repo *artifact.JarCache
+}
+
+func NewJavaBuilder() *JavaBuilder {
+	return &JavaBuilder{
+		repo: artifact.NewJarCache(),
+	}
 }
 
 func (j *JavaBuilder) Run(module *Module, progArgs []string) error {
@@ -30,15 +48,6 @@ func (j *JavaBuilder) getModuleJarPath(module *Module) string {
 	buildDir := filepath.Join(module.ModuleDir, "build")
 	return filepath.Join(buildDir, module.Name+".jar")
 }
-
-const (
-	PropertyOutputType    = "OutputType"
-	PropertyMainClass     = "MainClass"
-	PropertyCompilerFlags = "CompilerFlags"
-	PropertyJarDate       = "JarDate"
-	OutputTypeJar         = "Jar"
-	OutputTypeExeJar      = "ExecutableJar"
-)
 
 func (j *JavaBuilder) Build(module *Module) error {
 	outputType := module.GetProperty(PropertyOutputType, OutputTypeJar)
@@ -69,18 +78,18 @@ func (j *JavaBuilder) Build(module *Module) error {
 	}
 
 	sourceFilesPath := filepath.Join(buildTmpDir, "sourcefiles.txt")
-	sourcefilesFile, err := os.Create(sourceFilesPath)
+	sourceFilesFile, err := os.Create(sourceFilesPath)
 	if err != nil {
 		return err
 	}
-	defer sourcefilesFile.Close()
+	defer sourceFilesFile.Close()
 	for _, sourceFile := range sources {
-		_, err = sourcefilesFile.WriteString(sourceFile.Path + "\n")
+		_, err = sourceFilesFile.WriteString(sourceFile.Path + "\n")
 		if err != nil {
 			return err
 		}
 	}
-	sourcefilesFile.Close()
+	sourceFilesFile.Close()
 
 	// For compilation, use the absolute paths to all jar dependencies
 	classPath := ""
@@ -193,4 +202,70 @@ func copyFile(src, dst string) error {
 	// Copy the contents from source to destination
 	_, err = io.Copy(destinationFile, sourceFile)
 	return err
+}
+
+type PackageDependency struct {
+	Path       string
+	URL        string
+	Transitive []PackageDependency
+}
+
+func (d PackageDependency) PrintTree(index int) {
+	fmt.Printf("%s%s\n", strings.Repeat("  ", index), d.URL)
+	for _, t := range d.Transitive {
+		t.PrintTree(index + 1)
+	}
+}
+
+func (j *JavaBuilder) ResolveDependencies(module *Module) ([]PackageDependency, error) {
+	deps := make([]PackageDependency, 0)
+	for _, ref := range module.Packages.References {
+		parts := strings.Split(ref.URL, ":")
+		if len(parts) != 3 {
+			return deps, fmt.Errorf("invalid package URL: %s", ref.URL)
+		}
+		groupID := parts[0]
+		artifactID := parts[1]
+		version := parts[2]
+
+		dep, err := j.addDependency(groupID, artifactID, version)
+		if err != nil {
+			return nil, err
+		}
+		deps = append(deps, dep)
+	}
+	return deps, nil
+}
+
+func (j *JavaBuilder) addDependency(groupID, artifactID, version string) (PackageDependency, error) {
+	dep := PackageDependency{}
+	pom, err := j.repo.GetPOM(groupID, artifactID, version)
+	if err != nil {
+		return dep, err
+	}
+	switch pom.Packaging {
+	case "", "jar":
+		jarPath, err := j.repo.GetJAR(groupID, artifactID, version)
+		if err != nil {
+			return dep, err
+		}
+		dep = PackageDependency{
+			Path:       jarPath,
+			URL:        artifact.GAV(groupID, artifactID, version),
+			Transitive: []PackageDependency{},
+		}
+	default:
+		return dep, fmt.Errorf("packaging type not supported: %s", pom.Packaging)
+	}
+	for _, childDep := range pom.Dependencies {
+		if childDep.Scope == "test" || childDep.Scope == "provided" {
+			continue // Skip test and provided scope dependencies
+		}
+		childDepDep, err := j.addDependency(childDep.GroupID, childDep.ArtifactID, childDep.Version)
+		if err != nil {
+			return dep, err
+		}
+		dep.Transitive = append(dep.Transitive, childDepDep)
+	}
+	return dep, nil
 }
