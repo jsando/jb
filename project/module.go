@@ -168,6 +168,16 @@ func (m *Module) GetProperty(key, defaultValue string) string {
 	return value
 }
 
+func (m *Module) GetPropertyList(key string) []string {
+	var values []string
+	for _, property := range m.Properties.Properties {
+		if property.XMLName.Local == key {
+			values = append(values, strings.TrimSpace(property.Value))
+		}
+	}
+	return values
+}
+
 func (m *Module) ResolveDependencies() ([]PackageDependency, error) {
 	builder, err := GetBuilder(m.SDK)
 	if err != nil {

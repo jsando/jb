@@ -1,0 +1,11 @@
+<Module Sdk="Java">
+    <Properties>
+        <OutputType>Jar</OutputType>
+        <!-- Can list zero to many files or glob patterns to embed, they will have same relative path
+             within the jar file -->
+        <Embed>file1</Embed>
+        <Embed>file2</Embed>
+        <Embed>*.txt</Embed>
+        <Embed>morefiles/subdir/*</Embed>
+    </Properties>
+</Module>

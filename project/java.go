@@ -115,6 +115,33 @@ func (j *JavaBuilder) Build(module *Module) error {
 		}
 	}
 
+	// Copy embeds to output folder then jar can just jar everything
+	embeds := module.GetPropertyList("Embed")
+	for _, embed := range embeds {
+		srcPattern := filepath.Join(module.ModuleDir, embed)
+		matchingFiles, err := filepath.Glob(srcPattern)
+		if err != nil {
+			return fmt.Errorf("failed to glob embed %s: %w", srcPattern, err)
+		}
+		if len(matchingFiles) == 0 {
+			return fmt.Errorf("no embeds found matching %s", srcPattern)
+		}
+		for _, src := range matchingFiles {
+			// Use relative paths for destination to preserve folder structure
+			relPath, err := filepath.Rel(module.ModuleDir, src)
+			if err != nil {
+				return fmt.Errorf("failed to determine relative path for %s: %w", src, err)
+			}
+			dst := filepath.Join(buildClasses, relPath)
+			if err := os.MkdirAll(filepath.Dir(dst), os.ModePerm); err != nil {
+				return fmt.Errorf("failed to create directory %s: %w", filepath.Dir(dst), err)
+			}
+			if err := copyFile(src, dst); err != nil {
+				return fmt.Errorf("failed to copy embed %s to %s: %w", src, dst, err)
+			}
+		}
+	}
+
 	// Build into .jar
 	if err := j.buildJar(module, buildDir, jarDate, mainClass, deps, buildTmpDir, buildClasses); err != nil {
 		return fmt.Errorf("failed to build jar: %w", err)
