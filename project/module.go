@@ -206,6 +206,14 @@ func (m *Module) Run(progArgs []string) error {
 	return builder.Run(m, progArgs)
 }
 
+func (m *Module) Clean() error {
+	builder, err := GetBuilder(m.SDK)
+	if err != nil {
+		return err
+	}
+	return builder.Clean(m)
+}
+
 func (m *Module) ResolveReferences() ([]*Module, error) {
 	visited := make(map[*Module]bool)
 	result := []*Module{}

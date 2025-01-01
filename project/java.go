@@ -29,6 +29,14 @@ func NewJavaBuilder() *JavaBuilder {
 	}
 }
 
+func (j *JavaBuilder) Clean(module *Module) error {
+	buildDir := filepath.Join(module.ModuleDir, "build")
+	if err := os.RemoveAll(buildDir); err != nil {
+		return fmt.Errorf("failed to remove build dir %s: %w", buildDir, err)
+	}
+	return nil
+}
+
 func (j *JavaBuilder) Run(module *Module, progArgs []string) error {
 	jarPath := j.getModuleJarPath(module)
 	args := []string{"-jar", jarPath}
@@ -50,6 +58,7 @@ func (j *JavaBuilder) getModuleJarPath(module *Module) string {
 }
 
 func (j *JavaBuilder) Build(module *Module) error {
+	// Parse and validate build args for the module
 	outputType := module.GetProperty(PropertyOutputType, OutputTypeJar)
 	mainClass := module.GetProperty(PropertyMainClass, "")
 	if outputType == OutputTypeExeJar && len(mainClass) == 0 {
@@ -61,89 +70,105 @@ func (j *JavaBuilder) Build(module *Module) error {
 	extraFlags := module.GetProperty(PropertyCompilerFlags, "")
 	jarDate := module.GetProperty(PropertyJarDate, "")
 
+	// Gather java source files
 	sources, err := module.FindFilesBySuffixR(".java")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to find java sources: %w", err)
 	}
+	if len(sources) == 0 {
+		fmt.Printf("warning: no java sources found in %s\n", module.ModuleDir)
+	}
+
+	// Create the build dir(s)
 	buildDir := filepath.Join(module.ModuleDir, "build")
 	buildTmpDir := filepath.Join(buildDir, "tmp")
 	buildClasses := filepath.Join(buildTmpDir, "classes")
-	err = os.RemoveAll(buildTmpDir)
+
+	err = os.RemoveAll(buildDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to remove build dir %s: %w", buildDir, err)
 	}
 	err = os.MkdirAll(buildClasses, os.ModePerm)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create build dir %s: %w", buildClasses, err)
 	}
-
-	sourceFilesPath := filepath.Join(buildTmpDir, "sourcefiles.txt")
-	sourceFilesFile, err := os.Create(sourceFilesPath)
-	if err != nil {
-		return err
-	}
-	defer sourceFilesFile.Close()
-	for _, sourceFile := range sources {
-		_, err = sourceFilesFile.WriteString(sourceFile.Path + "\n")
-		if err != nil {
-			return err
-		}
-	}
-	sourceFilesFile.Close()
 
 	// For compilation, use the absolute paths to all jar dependencies
 	classPath := ""
 	deps, err := module.ResolveReferences()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to resolve dependencies: %w", err)
 	}
+	var classPathParts []string
 	if len(deps) > 0 {
 		for _, dep := range deps {
-			if len(classPath) > 0 {
-				classPath += string(os.PathListSeparator)
-			}
 			jarPath := j.getModuleJarPath(dep)
-			classPath += jarPath
+			classPathParts = append(classPathParts, jarPath)
 		}
-		classPath = "--class-path " + classPath
+		classPath = "--class-path " + strings.Join(classPathParts, string(os.PathListSeparator))
 	}
 
-	optionsPath := filepath.Join(buildTmpDir, "options.txt")
-	optionsFile, err := os.Create(optionsPath)
-	rel, err := filepath.Rel(module.ModuleDir, buildClasses)
-	_, err = optionsFile.WriteString(fmt.Sprintf(`
--d %s
-%s
-%s
-`, rel, extraFlags, classPath))
-	optionsFile.Close()
-	if err != nil {
-		return err
-	}
-
-	optionsPathRel, err := filepath.Rel(module.ModuleDir, optionsPath)
-	if err != nil {
-		return err
-	}
-	sourceFilesPathRel, err := filepath.Rel(module.ModuleDir, sourceFilesPath)
-	if err != nil {
-		return err
-	}
-
-	cmd := exec.Command("javac", "@"+optionsPathRel, "@"+sourceFilesPathRel)
-	cmd.Dir = module.ModuleDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
-	err = cmd.Run()
-	if err != nil {
-		return err
+	// Compile java sources (if there are any)
+	if len(sources) > 0 {
+		if err := j.compileJava(module, buildTmpDir, buildClasses, classPath, extraFlags, sources); err != nil {
+			return fmt.Errorf("failed to compile java sources: %w", err)
+		}
 	}
 
 	// Build into .jar
-	jarpath := filepath.Join(buildDir, module.Name+".jar")
+	if err := j.buildJar(module, buildDir, jarDate, mainClass, deps, buildTmpDir, buildClasses); err != nil {
+		return fmt.Errorf("failed to build jar: %w", err)
+	}
+	return nil
+}
+
+func (j *JavaBuilder) compileJava(module *Module, buildTmpDir, buildClasses, classPath, extraFlags string, sourceFiles []SourceFileInfo) error {
+	// Write javac args to a single file, avoid potential shell args length limitation (esp with large classpath)
+	buildArgsPath := filepath.Join(buildTmpDir, "javac-flags.txt")
+	buildArgs := fmt.Sprintf("-d %s\n%s\n%s\n", buildClasses, extraFlags, classPath)
+	if err := writeFile(buildArgsPath, buildArgs); err != nil {
+		return err
+	}
+
+	// Write all source file paths to a file for javac, avoids potential shell args length limitation
+	sourceFilesPath := filepath.Join(buildTmpDir, "javac-sources.txt")
+	sourceFileList := ""
+	for _, sourceFile := range sourceFiles {
+		sourceFileList += sourceFile.Path + "\n"
+	}
+	if err := writeFile(sourceFilesPath, sourceFileList); err != nil {
+		return err
+	}
+
+	// Convert paths to relative to the module dir (todo: why?)
+	optionsPathRel, _ := filepath.Rel(module.ModuleDir, buildArgsPath)
+	sourceFilesPathRel, _ := filepath.Rel(module.ModuleDir, sourceFilesPath)
+
+	// Compile sources
+	return execCommand("javac", module.ModuleDir, "@"+optionsPathRel, "@"+sourceFilesPathRel)
+}
+
+func execCommand(name string, dir string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Dir = dir
+	fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
+	return cmd.Run()
+}
+
+func (j *JavaBuilder) buildJar(module *Module,
+	buildDir string,
+	jarDate string,
+	mainClass string,
+	deps []*Module,
+	buildTmpDir string,
+	buildClasses string) error {
+
+	jarPath := filepath.Join(buildDir, module.Name+".jar")
 	jarArgs := []string{
-		"--create", "--file", jarpath,
+		// Java 1.8 only had the short form args, later versions allow "--create", "--file"
+		"-c", "-f", jarPath,
 	}
 	if jarDate != "" {
 		jarArgs = append(jarArgs, "--date", jarDate)
@@ -157,30 +182,32 @@ func (j *JavaBuilder) Build(module *Module) error {
 			depJarPath := j.getModuleJarPath(dep)
 			jarName := filepath.Base(depJarPath)
 			manifestClasspath += jarName + " "
-			err = copyFile(depJarPath, filepath.Join(buildDir, jarName))
+			if err := copyFile(depJarPath, filepath.Join(buildDir, jarName)); err != nil {
+				return err
+			}
 		}
 		if len(manifestClasspath) > 0 {
 			manifestPath := filepath.Join(buildTmpDir, "manifest")
-			manifestFile, err := os.Create(manifestPath)
-			if err != nil {
-				return err
-			}
-			_, err = manifestFile.WriteString(fmt.Sprintf(`Manifest-Version: 1.0
+			manifestString := fmt.Sprintf(`Manifest-Version: 1.0
 Class-Path: %s
-`, manifestClasspath))
-			manifestFile.Close()
-			if err != nil {
+`, manifestClasspath)
+			if err := writeFile(manifestPath, manifestString); err != nil {
 				return err
 			}
 			jarArgs = append(jarArgs, "--manifest", manifestPath)
 		}
 	}
 	jarArgs = append(jarArgs, "-C", buildClasses, ".")
-	cmd = exec.Command("jar", jarArgs...)
-	fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err = cmd.Run()
+	return execCommand("jar", module.ModuleDir, jarArgs...)
+}
+
+func writeFile(filePath, content string) error {
+	file, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	_, err = file.WriteString(content)
 	return err
 }
 
