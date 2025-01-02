@@ -47,5 +47,6 @@ func init() {
 
 	rootCmd.AddCommand(BuildCmd)
 	rootCmd.AddCommand(RunCmd)
+	rootCmd.AddCommand(PublishCmd)
 	rootCmd.AddCommand(packages.PackageCmd)
 }

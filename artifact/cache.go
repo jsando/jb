@@ -157,6 +157,65 @@ func (c *JarCache) GetFile(groupID, artifactID, version, file string) (string, e
 	return path, err
 }
 
+func (c *JarCache) PublishLocal(groupID, artifactID, version, jarPath, pomPath string) error {
+	pomFileName := filepath.Base(pomPath)
+	jarFileName := filepath.Base(jarPath)
+	artifactDir := c.artifactDir(groupID, artifactID, version)
+	preRelease := strings.Contains(version, "-")
+
+	// Create the artifact directory if it doesn't exist
+	err := os.MkdirAll(artifactDir, 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create artifact directory: %w", err)
+	}
+
+	// Copy POM file
+	destPomPath := filepath.Join(artifactDir, pomFileName)
+	if fileExists(destPomPath) && !preRelease {
+		return fmt.Errorf("POM file already exists at %s and version is not a pre-release", destPomPath)
+	}
+	err = copyFile(pomPath, destPomPath)
+	if err != nil {
+		return fmt.Errorf("failed to copy POM file: %w", err)
+	}
+
+	// Copy JAR file
+	destJarPath := filepath.Join(artifactDir, jarFileName)
+	if fileExists(destJarPath) && !preRelease {
+		return fmt.Errorf("JAR file already exists at %s and version is not a pre-release", destJarPath)
+	}
+	err = copyFile(jarPath, destJarPath)
+	if err != nil {
+		return fmt.Errorf("failed to copy JAR file: %w", err)
+	}
+	fmt.Printf("Successfully published %s:%s:%s to local repository\n", groupID, artifactID, version)
+	return nil
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// copyFile is a helper function to copy a file from src to dst
+func copyFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open source file: %w", err)
+	}
+	defer srcFile.Close()
+	dstFile, err := os.Create(dst)
+	if err != nil {
+		return fmt.Errorf("failed to create destination file: %w", err)
+	}
+	defer dstFile.Close()
+	_, err = io.Copy(dstFile, srcFile)
+	if err != nil {
+		return fmt.Errorf("failed to copy file content: %w", err)
+	}
+	return nil
+}
+
 func fetchFromMaven(mavenBaseURL string, groupID, artifactID, version, file string, out io.Writer) error {
 	groupIDWithSlashes := strings.ReplaceAll(groupID, ".", "/")
 	u, err := url.Parse(mavenBaseURL)

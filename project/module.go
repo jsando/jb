@@ -238,6 +238,14 @@ func (m *Module) Clean() error {
 	return builder.Clean(m)
 }
 
+func (m *Module) Publish(repoURL, user, password string) error {
+	builder, err := GetBuilder(m.SDK)
+	if err != nil {
+		return err
+	}
+	return builder.Publish(m, repoURL, user, password)
+}
+
 func (m *Module) ResolveReferences() ([]*Module, error) {
 	visited := make(map[*Module]bool)
 	result := []*Module{}

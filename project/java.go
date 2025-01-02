@@ -272,6 +272,12 @@ Class-Path: %s
 	return execCommand("jar", module.ModuleDir, jarArgs...)
 }
 
+func (j *JavaBuilder) Publish(m *Module, repoURL, user, password string) error {
+	jarPath := j.getModuleJarPath(m)
+	pomPath := strings.TrimSuffix(jarPath, ".jar") + ".pom"
+	return j.repo.PublishLocal(m.GroupID, m.Name, m.Version, jarPath, pomPath)
+}
+
 func writeFile(filePath, content string) error {
 	file, err := os.Create(filePath)
 	if err != nil {
