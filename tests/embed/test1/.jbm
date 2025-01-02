@@ -1,4 +1,5 @@
 <Module Sdk="Java">
+    <Version>1.0</Version>
     <Properties>
         <OutputType>Jar</OutputType>
         <!-- Can list zero to many files or glob patterns to embed, they will have same relative path

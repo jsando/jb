@@ -1,6 +1,7 @@
 package project
 
 import (
+	"encoding/xml"
 	"fmt"
 	"github.com/jsando/jb/artifact"
 	"io"
@@ -54,8 +55,7 @@ func (j *JavaBuilder) Run(module *Module, progArgs []string) error {
 
 func (j *JavaBuilder) getModuleJarPath(module *Module) string {
 	buildDir := filepath.Join(module.ModuleDir, "build")
-	version := module.GetProperty("Version", "1.0")
-	return filepath.Join(buildDir, module.Name+"-"+version+".jar")
+	return filepath.Join(buildDir, module.Name+"-"+module.Version+".jar")
 }
 
 func (j *JavaBuilder) Build(module *Module) error {
@@ -147,6 +147,11 @@ func (j *JavaBuilder) Build(module *Module) error {
 	if err := j.buildJar(module, buildDir, jarDate, mainClass, deps, buildTmpDir, buildClasses); err != nil {
 		return fmt.Errorf("failed to build jar: %w", err)
 	}
+
+	// write pom file
+	if err := j.writePOM(module, deps); err != nil {
+		return fmt.Errorf("failed to write pom: %w", err)
+	}
 	return nil
 }
 
@@ -183,6 +188,44 @@ func execCommand(name string, dir string, args ...string) error {
 	cmd.Dir = dir
 	fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
 	return cmd.Run()
+}
+
+func (j *JavaBuilder) writePOM(module *Module, deps []*Module) error {
+	pom := artifact.POM{
+		Xmlns:             "http://maven.apache.org/POM/4.0.0",                                          // Default namespace
+		XmlnsXsi:          "http://www.w3.org/2001/XMLSchema-instance",                                  // XML Schema instance namespace
+		XsiSchemaLocation: "http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd", // Schema location
+		ModelVersion:      "4.0.0",
+		Packaging:         "jar",
+		GroupID:           module.GroupID,
+		ArtifactID:        module.Name,
+		Version:           module.Version,
+		Name:              module.Name,
+		Description:       module.Name,
+	}
+	jarPath := j.getModuleJarPath(module)
+	pomPath := strings.TrimSuffix(jarPath, ".jar") + ".pom"
+
+	if len(deps) > 0 {
+		pom.Dependencies = make([]artifact.Dependency, len(deps))
+		for i, dep := range deps {
+			pom.Dependencies[i] = artifact.Dependency{
+				GroupID:    dep.GroupID,
+				ArtifactID: dep.Name,
+				Version:    dep.Version,
+			}
+		}
+	}
+	pomXML, err := xml.MarshalIndent(pom, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to serialize POM to XML: %w", err)
+	}
+	xmlHeader := []byte(xml.Header)
+	pomContent := append(xmlHeader, pomXML...)
+	if err := writeFile(pomPath, string(pomContent)); err != nil {
+		return fmt.Errorf("failed to write POM to %s: %w", pomPath, err)
+	}
+	return nil
 }
 
 func (j *JavaBuilder) buildJar(module *Module,

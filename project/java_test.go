@@ -2,6 +2,9 @@ package project
 
 import (
 	"archive/zip"
+	"encoding/xml"
+	"github.com/jsando/jb/artifact"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -74,6 +77,24 @@ func TestJavaBuilder_Build_WithEmbeds(t *testing.T) {
 		"morefiles/subdir/file2",
 		"morefiles/subdir/file3",
 	})
+	// parse the pom file and verify its contents
+	pomPath := filepath.Join("..", "tests", "embed", "test1", "build", "test1-1.0.pom")
+	if _, err := os.Stat(pomPath); os.IsNotExist(err) {
+		t.Fatalf("POM file does not exist: %v", pomPath)
+	}
+	file, err := os.Open(pomPath)
+	if err != nil {
+		t.Fatalf("Failed to open POM file: %v", err)
+	}
+	defer file.Close()
+	decoder := xml.NewDecoder(file)
+	pom := artifact.POM{}
+	if err := decoder.Decode(&pom); err != nil {
+		t.Fatalf("Failed to parse POM file: %v", err)
+	}
+	assert.Equal(t, "jar", pom.Packaging)
+	assert.Equal(t, "1.0", pom.Version)
+	assert.Equal(t, "com.example", pom.GroupID)
 }
 
 func verifyJarContents(t *testing.T, jarPath string, files []string) {

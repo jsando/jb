@@ -3,6 +3,7 @@ package project
 import (
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -10,11 +11,16 @@ import (
 	"strings"
 )
 
+const DefaultGroupID = "com.example"
+const DefaultVersion = "1.0.0-snapshot"
+
 type Module struct {
 	XMLName    xml.Name    `xml:"Module"`
 	ModuleFile string      `xml:"-"`        // Absolute path to jbm file
 	ModuleDir  string      `xml:"-"`        // Absolute path to module directory
+	GroupID    string      `xml:"GroupID"`  // Organization (used as maven group id)
 	Name       string      `xml:"-"`        // Simple module name (ie the dir name)
+	Version    string      `xml:"Version"`  // Version as a semver string, defaults to "1.0.0-snapshot"
 	SDK        string      `xml:"Sdk,attr"` // Name of dev kit (which builder to use)
 	Properties *Properties `xml:"Properties"`
 	References *References `xml:"References"`
@@ -132,6 +138,14 @@ func (l *ModuleLoader) loadModule(modulePath string) (*Module, error) {
 		module.Properties = &Properties{
 			Properties: make([]Property, 0),
 		}
+	}
+	if module.Version == "" {
+		module.Version = DefaultVersion
+		fmt.Printf("WARNING: no 'Version' specified for module %s, using default %s\n", module.Name, module.Version)
+	}
+	if module.GroupID == "" {
+		module.GroupID = DefaultGroupID
+		fmt.Printf("WARNING: no 'GroupID' specified for module %s, using default %s\n", module.Name, module.GroupID)
 	}
 	return &module, nil
 }
