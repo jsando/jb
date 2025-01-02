@@ -54,7 +54,8 @@ func (j *JavaBuilder) Run(module *Module, progArgs []string) error {
 
 func (j *JavaBuilder) getModuleJarPath(module *Module) string {
 	buildDir := filepath.Join(module.ModuleDir, "build")
-	return filepath.Join(buildDir, module.Name+".jar")
+	version := module.GetProperty("Version", "1.0")
+	return filepath.Join(buildDir, module.Name+"-"+version+".jar")
 }
 
 func (j *JavaBuilder) Build(module *Module) error {
@@ -192,7 +193,7 @@ func (j *JavaBuilder) buildJar(module *Module,
 	buildTmpDir string,
 	buildClasses string) error {
 
-	jarPath := filepath.Join(buildDir, module.Name+".jar")
+	jarPath := j.getModuleJarPath(module)
 	jarArgs := []string{
 		// Java 1.8 only had the short form args, later versions allow "--create", "--file"
 		"-c", "-f", jarPath,

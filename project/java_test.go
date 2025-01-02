@@ -60,7 +60,7 @@ func TestJavaBuilder_Build_WithEmbeds(t *testing.T) {
 	assert.NoError(t, err)
 	err = module.Build()
 	assert.NoError(t, err)
-	jarPath := filepath.Join("..", "tests", "embed", "test1", "build", "test1.jar")
+	jarPath := filepath.Join("..", "tests", "embed", "test1", "build", "test1-1.0.jar")
 	verifyJarContents(t, jarPath, []string{
 		"META-INF/",
 		"META-INF/MANIFEST.MF",
