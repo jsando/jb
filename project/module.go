@@ -147,6 +147,11 @@ func (l *ModuleLoader) loadModule(modulePath string) (*Module, error) {
 		module.GroupID = DefaultGroupID
 		fmt.Printf("WARNING: no 'GroupID' specified for module %s, using default %s\n", module.Name, module.GroupID)
 	}
+	if module.Packages == nil {
+		module.Packages = &Packages{
+			References: make([]*PackageReference, 0),
+		}
+	}
 	return &module, nil
 }
 

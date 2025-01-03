@@ -100,13 +100,12 @@ func (j *JavaBuilder) Build(module *Module) error {
 	if err != nil {
 		return fmt.Errorf("failed to resolve dependencies: %w", err)
 	}
-	var classPathParts []string
-	if len(deps) > 0 {
-		for _, dep := range deps {
-			jarPath := j.getModuleJarPath(dep)
-			classPathParts = append(classPathParts, jarPath)
-		}
-		classPath = "--class-path " + strings.Join(classPathParts, string(os.PathListSeparator))
+	compileClasspath, err := j.getBuildDependencies(module)
+	if err != nil {
+		return fmt.Errorf("failed to get build dependencies: %w", err)
+	}
+	if len(compileClasspath) > 0 {
+		classPath = "--class-path " + strings.Join(compileClasspath, string(os.PathListSeparator))
 	}
 
 	// Compile java sources (if there are any)
@@ -144,7 +143,7 @@ func (j *JavaBuilder) Build(module *Module) error {
 	}
 
 	// Build into .jar
-	if err := j.buildJar(module, buildDir, jarDate, mainClass, deps, buildTmpDir, buildClasses); err != nil {
+	if err := j.buildJar(module, buildDir, jarDate, mainClass, compileClasspath, buildTmpDir, buildClasses); err != nil {
 		return fmt.Errorf("failed to build jar: %w", err)
 	}
 
@@ -232,7 +231,7 @@ func (j *JavaBuilder) buildJar(module *Module,
 	buildDir string,
 	jarDate string,
 	mainClass string,
-	deps []*Module,
+	jarPaths []string,
 	buildTmpDir string,
 	buildClasses string) error {
 
@@ -249,11 +248,10 @@ func (j *JavaBuilder) buildJar(module *Module,
 		jarArgs = append(jarArgs, "--main-class", mainClass)
 
 		manifestClasspath := ""
-		for _, dep := range deps {
-			depJarPath := j.getModuleJarPath(dep)
-			jarName := filepath.Base(depJarPath)
+		for _, dep := range jarPaths {
+			jarName := filepath.Base(dep)
 			manifestClasspath += jarName + " "
-			if err := copyFile(depJarPath, filepath.Join(buildDir, jarName)); err != nil {
+			if err := copyFile(dep, filepath.Join(buildDir, jarName)); err != nil {
 				return err
 			}
 		}
@@ -310,6 +308,9 @@ func copyFile(src, dst string) error {
 
 type PackageDependency struct {
 	Path       string
+	GroupID    string
+	ArtifactID string
+	Version    string
 	URL        string
 	Transitive []PackageDependency
 }
@@ -332,6 +333,10 @@ func (j *JavaBuilder) ResolveDependencies(module *Module) ([]PackageDependency, 
 		artifactID := parts[1]
 		version := parts[2]
 
+		if len(groupID) == 0 || len(artifactID) == 0 || len(version) == 0 {
+			return deps, fmt.Errorf("invalid package URL: %s", ref.URL)
+		}
+
 		dep, err := j.addDependency(groupID, artifactID, version)
 		if err != nil {
 			return nil, err
@@ -343,6 +348,7 @@ func (j *JavaBuilder) ResolveDependencies(module *Module) ([]PackageDependency, 
 
 func (j *JavaBuilder) addDependency(groupID, artifactID, version string) (PackageDependency, error) {
 	dep := PackageDependency{}
+	fmt.Printf("resolving %s:%s:%s\n", groupID, artifactID, version)
 	pom, err := j.repo.GetPOM(groupID, artifactID, version)
 	if err != nil {
 		return dep, err
@@ -356,6 +362,9 @@ func (j *JavaBuilder) addDependency(groupID, artifactID, version string) (Packag
 		dep = PackageDependency{
 			Path:       jarPath,
 			URL:        artifact.GAV(groupID, artifactID, version),
+			GroupID:    groupID,
+			ArtifactID: artifactID,
+			Version:    version,
 			Transitive: []PackageDependency{},
 		}
 	default:
@@ -365,6 +374,7 @@ func (j *JavaBuilder) addDependency(groupID, artifactID, version string) (Packag
 		if childDep.Scope == "test" || childDep.Scope == "provided" {
 			continue // Skip test and provided scope dependencies
 		}
+		fmt.Printf("recursive resolving %s:%s:%s\n", childDep.GroupID, childDep.ArtifactID, childDep.Version)
 		childDepDep, err := j.addDependency(childDep.GroupID, childDep.ArtifactID, childDep.Version)
 		if err != nil {
 			return dep, err
@@ -372,4 +382,85 @@ func (j *JavaBuilder) addDependency(groupID, artifactID, version string) (Packag
 		dep.Transitive = append(dep.Transitive, childDepDep)
 	}
 	return dep, nil
+}
+
+func (j *JavaBuilder) getBuildDependencies(module *Module) ([]string, error) {
+	seenDeps := make(map[string]string) // Map to store seen GAV (GroupID:ArtifactID) and their versions
+	jars := make(map[string]struct{})   // Set to ensure unique jar paths
+
+	// Get the list of modules this module depends on
+	refs, err := module.ResolveReferences()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve references for module %s: %w", module.Name, err)
+	}
+
+	var addPkg func(pkg PackageDependency) error
+	addPkg = func(pkg PackageDependency) error {
+		key := pkg.GroupID + ":" + pkg.ArtifactID // GroupID:ArtifactID
+		if existingVersion, exists := seenDeps[key]; exists {
+			// Check for version conflict
+			if existingVersion != pkg.Version {
+				return fmt.Errorf("version conflict for dependency %s: %s vs %s",
+					key, existingVersion, pkg.Version)
+			}
+		} else {
+			// Store seen dependency version
+			seenDeps[key] = pkg.Version
+			jars[pkg.Path] = struct{}{}
+		}
+		// Recursively collect transitive dependencies
+		for _, dep := range pkg.Transitive {
+			if err := addPkg(dep); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// Add the package dependencies for this module and each of its referenced modules
+	deps, err := j.ResolveDependencies(module)
+	if err != nil {
+		return nil, err
+	}
+	for _, dep := range deps {
+		if err := addPkg(dep); err != nil {
+			return nil, err
+		}
+	}
+	for _, ref := range refs {
+		// add module jar
+		dep := j.getModulePackage(ref)
+		if err := addPkg(dep); err != nil {
+			return nil, err
+		}
+		// add module dependencies
+		deps, err := j.ResolveDependencies(module)
+		if err != nil {
+			return nil, err
+		}
+		for _, dep := range deps {
+			if err := addPkg(dep); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Convert the unique jar paths in the jars set into a slice
+	jarPaths := make([]string, 0, len(jars))
+	for jar := range jars {
+		jarPaths = append(jarPaths, jar)
+	}
+
+	return jarPaths, nil
+}
+
+func (j *JavaBuilder) getModulePackage(ref *Module) PackageDependency {
+	return PackageDependency{
+		Path:       j.getModuleJarPath(ref),
+		GroupID:    ref.GroupID,
+		ArtifactID: ref.Name,
+		Version:    ref.Version,
+		URL:        artifact.GAV(ref.GroupID, ref.Name, ref.Version),
+		Transitive: []PackageDependency{},
+	}
 }

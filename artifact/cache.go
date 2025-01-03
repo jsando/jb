@@ -33,7 +33,7 @@ type POM struct {
 	Description       string       `xml:"description,omitempty"`
 	URL               string       `xml:"url,omitempty"`
 	Properties        *Properties  `xml:"properties,omitempty"`
-	Dependencies      []Dependency `xml:"dependencies,omitempty>dependency"`
+	Dependencies      []Dependency `xml:"dependencies>dependency"`
 }
 
 type Dependency struct {

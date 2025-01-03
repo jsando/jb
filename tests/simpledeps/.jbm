@@ -5,6 +5,5 @@
     </Properties>
     <Packages>
         <Package URL="com.google.code.gson:gson:2.11.0"/>
-        <Package URL="org.eclipse.jetty:jetty-server:12.0.13"/>
     </Packages>
 </Module>
