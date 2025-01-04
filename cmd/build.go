@@ -4,10 +4,8 @@ Copyright © 2024 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
-	"fmt"
 	"github.com/jsando/jb/project"
 	"github.com/spf13/cobra"
-	"os"
 	"path/filepath"
 )
 
@@ -23,13 +21,11 @@ var BuildCmd = &cobra.Command{
 		}
 		module, err := loadModule(path)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			project.JBLog.Fatalf("error loading module: %s", err)
 		}
 		err = module.Build()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "build encountered an error: %s\n", err.Error())
-			os.Exit(1)
+			project.JBLog.Fatalf("build encountered an error: %s", err)
 		}
 	},
 }
