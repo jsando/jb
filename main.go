@@ -6,44 +6,63 @@ import (
 	"github.com/jsando/jb/builder"
 	"github.com/pterm/pterm"
 	"os"
+	"slices"
 )
+
+const USAGE = `jb (1.0.0) - The Easier Java Build Tool'
+Usage: jb [command] [command-options] [arguments]
+
+Execute a command.
+
+Commands:
+  build    Build a module.
+  clean    Clean build outputs.
+  help     Show command line help.
+  publish  Publish a module to the local maven repository or a remote repository.
+  run      Build and run an ExecutableJar module.
+
+Run 'jb [command] --help' for more information on a command.`
+
+func usage(exitCode int) {
+	fmt.Println(USAGE)
+	os.Exit(exitCode)
+}
 
 func main() {
 	if len(os.Args) < 2 {
-		helpCommand()
+		usage(1)
 	}
 
 	command := os.Args[1]
 	switch command {
 	case "build":
 		buildCommand(os.Args[2:])
+	case "clean":
+		cleanCommand(os.Args[2:])
+	case "help", "-help", "--help":
+		usage(0)
+	case "publish":
+		publishCommand(os.Args[2:])
 	case "run":
 		runCommand(os.Args[2:])
-	case "help":
-		helpCommand()
 	default:
 		fmt.Printf("jb: unknown command %s\n", command)
-		helpCommand()
+		usage(1)
 	}
-}
-
-func helpCommand() {
-	fmt.Println("jb help")
-	os.Exit(1)
 }
 
 func buildCommand(args []string) {
-	buildFlags := flag.NewFlagSet("build", flag.ExitOnError)
-	buildFlags.Usage = func() {
+	fs := flag.NewFlagSet("build", flag.ExitOnError)
+	fs.Usage = func() {
 		fmt.Println("Usage: jb build [path]")
-		buildFlags.PrintDefaults()
+		fs.PrintDefaults()
 	}
-	if err := buildFlags.Parse(args); err != nil {
+	if err := fs.Parse(args); err != nil {
 		fmt.Printf("error: %s\n", err)
 		os.Exit(1)
 	}
 	path := "."
-	buildArgs := buildFlags.Args()
+	buildArgs := fs.Args()
 	if len(buildArgs) > 0 && buildArgs[0] != "--" {
 		path = buildArgs[0]
 	}
@@ -53,17 +72,55 @@ func buildCommand(args []string) {
 	}
 }
 
-func runCommand(args []string) {
-	runFlags := flag.NewFlagSet("run", flag.ExitOnError)
-	runFlags.Usage = func() {
-		fmt.Println("Usage: jb run [path] [-- program args]")
-		runFlags.PrintDefaults()
+func cleanCommand(args []string) {
+	fs := flag.NewFlagSet("clean", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Println("Usage: jb clean [path]")
+		fs.PrintDefaults()
 	}
-	if err := runFlags.Parse(args); err != nil {
+	if err := fs.Parse(args); err != nil {
 		fmt.Printf("error: %s\n", err)
 		os.Exit(1)
 	}
-	runArgs, progArgs := splitArgs(runFlags.Args())
+	path := "."
+	err := builder.Clean(path)
+	if err != nil {
+		pterm.Fatal.Printf("BUILD FAILED: %s\n", err)
+	}
+}
+
+func publishCommand(args []string) {
+	fs := flag.NewFlagSet("publish", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Println("Usage: jb publish [path]")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		fmt.Printf("error: %s\n", err)
+		os.Exit(1)
+	}
+	path := "."
+	buildArgs := fs.Args()
+	if len(buildArgs) > 0 && buildArgs[0] != "--" {
+		path = buildArgs[0]
+	}
+	err := builder.BuildAndPublishModule(path)
+	if err != nil {
+		pterm.Fatal.Printf("BUILD FAILED: %s\n", err)
+	}
+}
+
+func runCommand(args []string) {
+	fs := flag.NewFlagSet("run", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Println("Usage: jb run [path] [-- program args]")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		fmt.Printf("error: %s\n", err)
+		os.Exit(1)
+	}
+	runArgs, progArgs := splitArgs(fs.Args())
 	path := "."
 	if len(runArgs) > 0 {
 		path = runArgs[0]
@@ -75,18 +132,9 @@ func runCommand(args []string) {
 }
 
 func splitArgs(args []string) ([]string, []string) {
-	dash := argDash(args)
+	dash := slices.Index(args, "--")
 	if dash < 0 {
 		return args, []string{}
 	}
 	return args[:dash], args[dash+1:]
-}
-
-func argDash(args []string) int {
-	for i, arg := range args {
-		if arg == "--" {
-			return i
-		}
-	}
-	return -1
 }

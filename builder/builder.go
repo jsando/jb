@@ -77,3 +77,11 @@ func BuildAndPublishModule(path string) error {
 	}
 	return builder.builder.Publish(builder.module, "", "", "")
 }
+
+func Clean(path string) error {
+	builder, err := newModuleBuilder(path)
+	if err != nil {
+		return err
+	}
+	return builder.builder.Clean(builder.module)
+}
