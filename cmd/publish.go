@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/jsando/jb/builder"
 	"github.com/spf13/cobra"
 	"os"
 )
@@ -18,16 +19,10 @@ var PublishCmd = &cobra.Command{
 		if len(args) > 0 {
 			path = args[0]
 		}
-		module, err := loadModule(path)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		err = module.Build()
+		err := builder.BuildAndPublishModule(path)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "build encountered an error: %s\n", err.Error())
 			os.Exit(1)
 		}
-		err = module.Publish("", "", "")
 	},
 }

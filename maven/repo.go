@@ -1,4 +1,4 @@
-package artifact
+package maven
 
 import (
 	"encoding/xml"
@@ -14,52 +14,14 @@ import (
 
 const MAVEN_CENTRAL_URL = "https://repo.maven.apache.org/maven2/"
 
-type ID struct {
-	GroupID, ArtifactID, Version string
-}
-
-type POM struct {
-	XMLName           xml.Name     `xml:"project"`
-	Xmlns             string       `xml:"xmlns,attr"`              // Default namespace
-	XmlnsXsi          string       `xml:"xmlns:xsi,attr"`          // XML Schema namespace
-	XsiSchemaLocation string       `xml:"xsi:schemaLocation,attr"` // Schema location attribute
-	ModelVersion      string       `xml:"modelVersion"`
-	Packaging         string       `xml:"packaging"`
-	GroupID           string       `xml:"groupId"`          // GroupID is optional if <parent> is specified
-	ArtifactID        string       `xml:"artifactId"`       // ArtifactID is required
-	Version           string       `xml:"version"`          // Version is required
-	Parent            *Dependency  `xml:"parent,omitempty"` // Optional parent module
-	Name              string       `xml:"name,omitempty"`
-	Description       string       `xml:"description,omitempty"`
-	URL               string       `xml:"url,omitempty"`
-	Properties        *Properties  `xml:"properties,omitempty"`
-	Dependencies      []Dependency `xml:"dependencies>dependency"`
-}
-
-type Dependency struct {
-	GroupID    string `xml:"groupId"`
-	ArtifactID string `xml:"artifactId"`
-	Version    string `xml:"version"`
-	Scope      string `xml:"scope"`
-}
-
-type Properties struct {
-	Properties []Property `xml:",any"` // Collection of key/value pairs
-}
-
-type Property struct {
-	XMLName xml.Name
-	Value   string `xml:",chardata"`
-}
-
-type JarCache struct {
+type LocalRepository struct {
 	baseDir string
 	remotes []string
 	poms    map[string]POM
 }
 
-func NewJarCache() *JarCache {
-	return &JarCache{
+func OpenLocalRepository() *LocalRepository {
+	return &LocalRepository{
 		baseDir: "~/.jb/repository",
 		remotes: []string{MAVEN_CENTRAL_URL},
 		poms:    make(map[string]POM),
@@ -84,7 +46,7 @@ func pomFile(artifactID, version string) string {
 	)
 }
 
-func (jc *JarCache) artifactDir(groupID, artifactID, version string) string {
+func (jc *LocalRepository) artifactDir(groupID, artifactID, version string) string {
 	groupIDWithSlashes := strings.ReplaceAll(groupID, ".", "/")
 	relPath := filepath.Join(filepath.SplitList(groupIDWithSlashes)...)
 	relPath = filepath.Join(relPath, artifactID, version)
@@ -95,7 +57,7 @@ func (jc *JarCache) artifactDir(groupID, artifactID, version string) string {
 	return filepath.Join(strings.ReplaceAll(jc.baseDir, "~", homeDir), relPath)
 }
 
-func (c *JarCache) GetPOM(groupID, artifactID, version string) (POM, error) {
+func (c *LocalRepository) GetPOM(groupID, artifactID, version string) (POM, error) {
 	gav := GAV(groupID, artifactID, version)
 	pom, found := c.poms[gav]
 	if found {
@@ -103,7 +65,7 @@ func (c *JarCache) GetPOM(groupID, artifactID, version string) (POM, error) {
 	}
 	pom = POM{}
 	pomFile := pomFile(artifactID, version)
-	path, err := c.GetFile(groupID, artifactID, version, pomFile)
+	path, err := c.getFile(groupID, artifactID, version, pomFile)
 	if err != nil {
 		return pom, err
 	}
@@ -120,11 +82,11 @@ func (c *JarCache) GetPOM(groupID, artifactID, version string) (POM, error) {
 	return pom, err
 }
 
-func (c *JarCache) GetJAR(groupID, artifactID, version string) (string, error) {
-	return c.GetFile(groupID, artifactID, version, jarFile(artifactID, version))
+func (c *LocalRepository) GetJAR(groupID, artifactID, version string) (string, error) {
+	return c.getFile(groupID, artifactID, version, jarFile(artifactID, version))
 }
 
-func (c *JarCache) GetFile(groupID, artifactID, version, file string) (string, error) {
+func (c *LocalRepository) getFile(groupID, artifactID, version, file string) (string, error) {
 	path := filepath.Join(c.artifactDir(groupID, artifactID, version), file)
 	_, err := os.Stat(path)
 	if err != nil {
@@ -140,7 +102,7 @@ func (c *JarCache) GetFile(groupID, artifactID, version, file string) (string, e
 				return path, err
 			}
 			for _, remote := range c.remotes {
-				err = fetchFromMaven(remote, groupID, artifactID, version, file, outFile)
+				err = fetchFromRemote(remote, groupID, artifactID, version, file, outFile)
 				if err == nil {
 					break
 				}
@@ -157,16 +119,16 @@ func (c *JarCache) GetFile(groupID, artifactID, version, file string) (string, e
 	return path, err
 }
 
-func (c *JarCache) PublishLocal(groupID, artifactID, version, jarPath, pomPath string) error {
+func (c *LocalRepository) InstallPackage(groupID, artifactID, version, jarPath, pomPath string) error {
 	pomFileName := filepath.Base(pomPath)
 	jarFileName := filepath.Base(jarPath)
 	artifactDir := c.artifactDir(groupID, artifactID, version)
 	preRelease := strings.Contains(version, "-")
 
-	// Create the artifact directory if it doesn't exist
+	// Create the maven directory if it doesn't exist
 	err := os.MkdirAll(artifactDir, 0755)
 	if err != nil {
-		return fmt.Errorf("failed to create artifact directory: %w", err)
+		return fmt.Errorf("failed to create maven directory: %w", err)
 	}
 
 	// Copy POM file
@@ -216,7 +178,7 @@ func copyFile(src, dst string) error {
 	return nil
 }
 
-func fetchFromMaven(mavenBaseURL string, groupID, artifactID, version, file string, out io.Writer) error {
+func fetchFromRemote(mavenBaseURL string, groupID, artifactID, version, file string, out io.Writer) error {
 	groupIDWithSlashes := strings.ReplaceAll(groupID, ".", "/")
 	u, err := url.Parse(mavenBaseURL)
 	if err != nil {

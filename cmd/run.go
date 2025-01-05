@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/jsando/jb/builder"
 	"github.com/spf13/cobra"
 	"os"
 )
@@ -29,20 +30,9 @@ var RunCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "error: too many arguments (hint: use '--' to separate program args)\n")
 			os.Exit(1)
 		}
-		module, err := loadModule(path)
+		err := builder.BuildAndRunModule(path, progArgs)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		err = module.Build()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "build encountered an error: %s\n", err.Error())
-			os.Exit(1)
-		}
-		err = module.Run(progArgs)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error running module: %s\n", err.Error())
-			os.Exit(1)
+			fmt.Fprintf(os.Stderr, "error: %s\n", err)
 		}
 	},
 }

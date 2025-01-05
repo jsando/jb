@@ -1,25 +1,15 @@
-package project
+package builder
 
 import (
 	"archive/zip"
 	"encoding/xml"
-	"github.com/jsando/jb/artifact"
+	"github.com/jsando/jb/maven"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
-
-func loadModule(path string) (*Module, error) {
-	path, err := filepath.Abs(path)
-	loader := NewModuleLoader()
-	module, err := loader.GetModule(path)
-	if err != nil {
-		return nil, err
-	}
-	return module, nil
-}
 
 func TestJavaBuilder_Build(t *testing.T) {
 	tests := []struct {
@@ -42,11 +32,7 @@ func TestJavaBuilder_Build(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
-			module, err := loadModule(tt.path)
-			assert.NoError(t, err)
-			err = module.Clean()
-			assert.NoError(t, err)
-			err = module.Build()
+			err := BuildModule(tt.path)
 			if tt.expectedError {
 				assert.Error(t, err)
 			} else {
@@ -57,11 +43,7 @@ func TestJavaBuilder_Build(t *testing.T) {
 }
 
 func TestJavaBuilder_Build_WithEmbeds(t *testing.T) {
-	module, err := loadModule("../tests/embed/test1")
-	assert.NoError(t, err)
-	err = module.Clean()
-	assert.NoError(t, err)
-	err = module.Build()
+	err := BuildModule("../tests/embed/test1")
 	assert.NoError(t, err)
 	jarPath := filepath.Join("..", "tests", "embed", "test1", "build", "test1-1.0.jar")
 	verifyJarContents(t, jarPath, []string{
@@ -88,7 +70,7 @@ func TestJavaBuilder_Build_WithEmbeds(t *testing.T) {
 	}
 	defer file.Close()
 	decoder := xml.NewDecoder(file)
-	pom := artifact.POM{}
+	pom := maven.POM{}
 	if err := decoder.Decode(&pom); err != nil {
 		t.Fatalf("Failed to parse POM file: %v", err)
 	}

@@ -1,10 +1,11 @@
-package project
+package java
 
 import (
 	"encoding/xml"
 	"fmt"
-	"github.com/jsando/jb/artifact"
-	"io"
+	"github.com/jsando/jb/maven"
+	"github.com/jsando/jb/project"
+	"github.com/jsando/jb/util"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,17 +21,17 @@ const (
 	OutputTypeExeJar      = "ExecutableJar"
 )
 
-type JavaBuilder struct {
-	repo *artifact.JarCache
+type Builder struct {
+	repo *maven.LocalRepository
 }
 
-func NewJavaBuilder() *JavaBuilder {
-	return &JavaBuilder{
-		repo: artifact.NewJarCache(),
+func NewBuilder() *Builder {
+	return &Builder{
+		repo: maven.OpenLocalRepository(),
 	}
 }
 
-func (j *JavaBuilder) Clean(module *Module) error {
+func (j *Builder) Clean(module *project.Module) error {
 	buildDir := filepath.Join(module.ModuleDir, "build")
 	if err := os.RemoveAll(buildDir); err != nil {
 		return fmt.Errorf("failed to remove build dir %s: %w", buildDir, err)
@@ -38,7 +39,7 @@ func (j *JavaBuilder) Clean(module *Module) error {
 	return nil
 }
 
-func (j *JavaBuilder) Run(module *Module, progArgs []string) error {
+func (j *Builder) Run(module *project.Module, progArgs []string) error {
 	jarPath := j.getModuleJarPath(module)
 	args := []string{"-jar", jarPath}
 	args = append(args, progArgs...)
@@ -53,12 +54,12 @@ func (j *JavaBuilder) Run(module *Module, progArgs []string) error {
 	return nil
 }
 
-func (j *JavaBuilder) getModuleJarPath(module *Module) string {
+func (j *Builder) getModuleJarPath(module *project.Module) string {
 	buildDir := filepath.Join(module.ModuleDir, "build")
 	return filepath.Join(buildDir, module.Name+"-"+module.Version+".jar")
 }
 
-func (j *JavaBuilder) Build(module *Module) error {
+func (j *Builder) Build(module *project.Module) error {
 	// Parse and validate build args for the module
 	outputType := module.GetProperty(PropertyOutputType, OutputTypeJar)
 	mainClass := module.GetProperty(PropertyMainClass, "")
@@ -72,7 +73,7 @@ func (j *JavaBuilder) Build(module *Module) error {
 	jarDate := module.GetProperty(PropertyJarDate, "")
 
 	// Gather java source files
-	sources, err := module.FindFilesBySuffixR(".java")
+	sources, err := util.FindFilesBySuffixR(module.ModuleDir, ".java")
 	if err != nil {
 		return fmt.Errorf("failed to find java sources: %w", err)
 	}
@@ -96,7 +97,7 @@ func (j *JavaBuilder) Build(module *Module) error {
 
 	// For compilation, use the absolute paths to all jar dependencies
 	classPath := ""
-	deps, err := module.ResolveReferences()
+	deps, err := module.GetModuleReferencesInBuildOrder()
 	if err != nil {
 		return fmt.Errorf("failed to resolve dependencies: %w", err)
 	}
@@ -136,7 +137,7 @@ func (j *JavaBuilder) Build(module *Module) error {
 			if err := os.MkdirAll(filepath.Dir(dst), os.ModePerm); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", filepath.Dir(dst), err)
 			}
-			if err := copyFile(src, dst); err != nil {
+			if err := util.CopyFile(src, dst); err != nil {
 				return fmt.Errorf("failed to copy embed %s to %s: %w", src, dst, err)
 			}
 		}
@@ -154,11 +155,11 @@ func (j *JavaBuilder) Build(module *Module) error {
 	return nil
 }
 
-func (j *JavaBuilder) compileJava(module *Module, buildTmpDir, buildClasses, classPath, extraFlags string, sourceFiles []SourceFileInfo) error {
+func (j *Builder) compileJava(module *project.Module, buildTmpDir, buildClasses, classPath, extraFlags string, sourceFiles []util.SourceFileInfo) error {
 	// Write javac args to a single file, avoid potential shell args length limitation (esp with large classpath)
 	buildArgsPath := filepath.Join(buildTmpDir, "javac-flags.txt")
 	buildArgs := fmt.Sprintf("-d %s\n%s\n%s\n", buildClasses, extraFlags, classPath)
-	if err := writeFile(buildArgsPath, buildArgs); err != nil {
+	if err := util.WriteFile(buildArgsPath, buildArgs); err != nil {
 		return err
 	}
 
@@ -168,7 +169,7 @@ func (j *JavaBuilder) compileJava(module *Module, buildTmpDir, buildClasses, cla
 	for _, sourceFile := range sourceFiles {
 		sourceFileList += sourceFile.Path + "\n"
 	}
-	if err := writeFile(sourceFilesPath, sourceFileList); err != nil {
+	if err := util.WriteFile(sourceFilesPath, sourceFileList); err != nil {
 		return err
 	}
 
@@ -189,8 +190,8 @@ func execCommand(name string, dir string, args ...string) error {
 	return cmd.Run()
 }
 
-func (j *JavaBuilder) writePOM(module *Module, deps []*Module) error {
-	pom := artifact.POM{
+func (j *Builder) writePOM(module *project.Module, deps []*project.Module) error {
+	pom := maven.POM{
 		Xmlns:             "http://maven.apache.org/POM/4.0.0",                                          // Default namespace
 		XmlnsXsi:          "http://www.w3.org/2001/XMLSchema-instance",                                  // XML Schema instance namespace
 		XsiSchemaLocation: "http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd", // Schema location
@@ -206,9 +207,9 @@ func (j *JavaBuilder) writePOM(module *Module, deps []*Module) error {
 	pomPath := strings.TrimSuffix(jarPath, ".jar") + ".pom"
 
 	if len(deps) > 0 {
-		pom.Dependencies = make([]artifact.Dependency, len(deps))
+		pom.Dependencies = make([]maven.Dependency, len(deps))
 		for i, dep := range deps {
-			pom.Dependencies[i] = artifact.Dependency{
+			pom.Dependencies[i] = maven.Dependency{
 				GroupID:    dep.GroupID,
 				ArtifactID: dep.Name,
 				Version:    dep.Version,
@@ -221,13 +222,13 @@ func (j *JavaBuilder) writePOM(module *Module, deps []*Module) error {
 	}
 	xmlHeader := []byte(xml.Header)
 	pomContent := append(xmlHeader, pomXML...)
-	if err := writeFile(pomPath, string(pomContent)); err != nil {
+	if err := util.WriteFile(pomPath, string(pomContent)); err != nil {
 		return fmt.Errorf("failed to write POM to %s: %w", pomPath, err)
 	}
 	return nil
 }
 
-func (j *JavaBuilder) buildJar(module *Module,
+func (j *Builder) buildJar(module *project.Module,
 	buildDir string,
 	jarDate string,
 	mainClass string,
@@ -251,7 +252,7 @@ func (j *JavaBuilder) buildJar(module *Module,
 		for _, dep := range jarPaths {
 			jarName := filepath.Base(dep)
 			manifestClasspath += jarName + " "
-			if err := copyFile(dep, filepath.Join(buildDir, jarName)); err != nil {
+			if err := util.CopyFile(dep, filepath.Join(buildDir, jarName)); err != nil {
 				return err
 			}
 		}
@@ -260,7 +261,7 @@ func (j *JavaBuilder) buildJar(module *Module,
 			manifestString := fmt.Sprintf(`Manifest-Version: 1.0
 Class-Path: %s
 `, manifestClasspath)
-			if err := writeFile(manifestPath, manifestString); err != nil {
+			if err := util.WriteFile(manifestPath, manifestString); err != nil {
 				return err
 			}
 			jarArgs = append(jarArgs, "--manifest", manifestPath)
@@ -270,40 +271,10 @@ Class-Path: %s
 	return execCommand("jar", module.ModuleDir, jarArgs...)
 }
 
-func (j *JavaBuilder) Publish(m *Module, repoURL, user, password string) error {
+func (j *Builder) Publish(m *project.Module, repoURL, user, password string) error {
 	jarPath := j.getModuleJarPath(m)
 	pomPath := strings.TrimSuffix(jarPath, ".jar") + ".pom"
-	return j.repo.PublishLocal(m.GroupID, m.Name, m.Version, jarPath, pomPath)
-}
-
-func writeFile(filePath, content string) error {
-	file, err := os.Create(filePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	_, err = file.WriteString(content)
-	return err
-}
-
-func copyFile(src, dst string) error {
-	// Open the source file
-	sourceFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	// Create the destination file
-	destinationFile, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer destinationFile.Close()
-
-	// Copy the contents from source to destination
-	_, err = io.Copy(destinationFile, sourceFile)
-	return err
+	return j.repo.InstallPackage(m.GroupID, m.Name, m.Version, jarPath, pomPath)
 }
 
 type PackageDependency struct {
@@ -322,7 +293,7 @@ func (d PackageDependency) PrintTree(index int) {
 	}
 }
 
-func (j *JavaBuilder) ResolveDependencies(module *Module) ([]PackageDependency, error) {
+func (j *Builder) ResolveDependencies(module *project.Module) ([]PackageDependency, error) {
 	deps := make([]PackageDependency, 0)
 	for _, ref := range module.Packages.References {
 		parts := strings.Split(ref.URL, ":")
@@ -346,7 +317,7 @@ func (j *JavaBuilder) ResolveDependencies(module *Module) ([]PackageDependency, 
 	return deps, nil
 }
 
-func (j *JavaBuilder) addDependency(groupID, artifactID, version string) (PackageDependency, error) {
+func (j *Builder) addDependency(groupID, artifactID, version string) (PackageDependency, error) {
 	dep := PackageDependency{}
 	fmt.Printf("resolving %s:%s:%s\n", groupID, artifactID, version)
 	pom, err := j.repo.GetPOM(groupID, artifactID, version)
@@ -361,7 +332,7 @@ func (j *JavaBuilder) addDependency(groupID, artifactID, version string) (Packag
 		}
 		dep = PackageDependency{
 			Path:       jarPath,
-			URL:        artifact.GAV(groupID, artifactID, version),
+			URL:        maven.GAV(groupID, artifactID, version),
 			GroupID:    groupID,
 			ArtifactID: artifactID,
 			Version:    version,
@@ -384,12 +355,12 @@ func (j *JavaBuilder) addDependency(groupID, artifactID, version string) (Packag
 	return dep, nil
 }
 
-func (j *JavaBuilder) getBuildDependencies(module *Module) ([]string, error) {
+func (j *Builder) getBuildDependencies(module *project.Module) ([]string, error) {
 	seenDeps := make(map[string]string) // Map to store seen GAV (GroupID:ArtifactID) and their versions
 	jars := make(map[string]struct{})   // Set to ensure unique jar paths
 
 	// Get the list of modules this module depends on
-	refs, err := module.ResolveReferences()
+	refs, err := module.GetModuleReferencesInBuildOrder()
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve references for module %s: %w", module.Name, err)
 	}
@@ -454,13 +425,13 @@ func (j *JavaBuilder) getBuildDependencies(module *Module) ([]string, error) {
 	return jarPaths, nil
 }
 
-func (j *JavaBuilder) getModulePackage(ref *Module) PackageDependency {
+func (j *Builder) getModulePackage(ref *project.Module) PackageDependency {
 	return PackageDependency{
 		Path:       j.getModuleJarPath(ref),
 		GroupID:    ref.GroupID,
 		ArtifactID: ref.Name,
 		Version:    ref.Version,
-		URL:        artifact.GAV(ref.GroupID, ref.Name, ref.Version),
+		URL:        maven.GAV(ref.GroupID, ref.Name, ref.Version),
 		Transitive: []PackageDependency{},
 	}
 }
