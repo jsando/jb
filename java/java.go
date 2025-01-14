@@ -1,6 +1,9 @@
 package java
 
 import (
+	"crypto/sha1"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/xml"
 	"fmt"
 	"github.com/jsando/jb/maven"
@@ -19,6 +22,7 @@ const (
 	PropertyJarDate       = "JarDate"
 	OutputTypeJar         = "Jar"
 	OutputTypeExeJar      = "ExecutableJar"
+	buildHashFile         = "build.sha1"
 )
 
 type Builder struct {
@@ -81,6 +85,36 @@ func (j *Builder) Build(module *project.Module) error {
 		fmt.Printf("warning: no java sources found in %s\n", module.ModuleDir)
 	}
 
+	// Gather embeds
+	embeds := module.GetPropertyList("Embed")
+	embedFiles, err := util.FindFilesByGlob(module.ModuleDir, embeds)
+
+	// Compute sha1(project-file, sources, embeds) and see if we're up to date
+	hasher := sha1.New()
+	_ = module.HashContent(hasher)
+	for _, source := range sources {
+		hasher.Write([]byte(source.Path))
+		bytes := make([]byte, 8)
+		binary.LittleEndian.PutUint64(bytes, uint64(source.Info.ModTime().UnixNano()))
+		hasher.Write(bytes)
+	}
+	for _, embed := range embedFiles {
+		hasher.Write([]byte(embed.Path))
+		bytes := make([]byte, 8)
+		fmt.Printf("file %s modtime %d\n", embed.Path, embed.Info.ModTime().UnixNano())
+		binary.LittleEndian.PutUint64(bytes, uint64(embed.Info.ModTime().UnixNano()))
+		hasher.Write(bytes)
+	}
+	hash := hex.EncodeToString(hasher.Sum(nil))
+	oldHash, err := util.ReadFileAsString(filepath.Join(module.ModuleDir, "build", buildHashFile))
+	if err != nil {
+		return fmt.Errorf("failed to read build hash: %w", err)
+	}
+	if hash == oldHash {
+		fmt.Printf("module %s is up to date\n", module.Name)
+		return nil
+	}
+
 	// Create the build dir(s)
 	buildDir := filepath.Join(module.ModuleDir, "build")
 	buildTmpDir := filepath.Join(buildDir, "tmp")
@@ -117,29 +151,17 @@ func (j *Builder) Build(module *project.Module) error {
 	}
 
 	// Copy embeds to output folder then jar can just jar everything
-	embeds := module.GetPropertyList("Embed")
-	for _, embed := range embeds {
-		srcPattern := filepath.Join(module.ModuleDir, embed)
-		matchingFiles, err := filepath.Glob(srcPattern)
+	for _, embed := range embedFiles {
+		relPath, err := filepath.Rel(module.ModuleDir, embed.Path)
 		if err != nil {
-			return fmt.Errorf("failed to glob embed %s: %w", srcPattern, err)
+			return fmt.Errorf("failed to get relative path for embed %s: %w", embed.Path, err)
 		}
-		if len(matchingFiles) == 0 {
-			return fmt.Errorf("no embeds found matching %s", srcPattern)
+		dst := filepath.Join(buildClasses, relPath)
+		if err := os.MkdirAll(filepath.Dir(dst), os.ModePerm); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", filepath.Dir(dst), err)
 		}
-		for _, src := range matchingFiles {
-			// Use relative paths for destination to preserve folder structure
-			relPath, err := filepath.Rel(module.ModuleDir, src)
-			if err != nil {
-				return fmt.Errorf("failed to determine relative path for %s: %w", src, err)
-			}
-			dst := filepath.Join(buildClasses, relPath)
-			if err := os.MkdirAll(filepath.Dir(dst), os.ModePerm); err != nil {
-				return fmt.Errorf("failed to create directory %s: %w", filepath.Dir(dst), err)
-			}
-			if err := util.CopyFile(src, dst); err != nil {
-				return fmt.Errorf("failed to copy embed %s to %s: %w", src, dst, err)
-			}
+		if err := util.CopyFile(embed.Path, dst); err != nil {
+			return fmt.Errorf("failed to copy embed %s to %s: %w", embed.Path, dst, err)
 		}
 	}
 
@@ -152,7 +174,9 @@ func (j *Builder) Build(module *project.Module) error {
 	if err := j.writePOM(module, deps); err != nil {
 		return fmt.Errorf("failed to write pom: %w", err)
 	}
-	return nil
+
+	// write build hash
+	return util.WriteFile(filepath.Join(buildDir, buildHashFile), hash)
 }
 
 func (j *Builder) compileJava(module *project.Module, buildTmpDir, buildClasses, classPath, extraFlags string, sourceFiles []util.SourceFileInfo) error {

@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"hash"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ const DefaultVersion = "1.0.0-snapshot"
 
 type Module struct {
 	XMLName    xml.Name    `xml:"Module"`
+	Content    []byte      `xml:"-"`        // raw file content
 	ModuleFile string      `xml:"-"`        // Absolute path to jbm file
 	ModuleDir  string      `xml:"-"`        // Absolute path to module directory
 	GroupID    string      `xml:"GroupID"`  // Organization (used as maven group id)
@@ -114,6 +116,7 @@ func (l *ModuleLoader) loadModule(modulePath string) (*Module, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	// todo verify schema and give hints if errors found
 	// a) verify all parameters
 	// b) does go return an error if nothing mapped?
@@ -122,6 +125,7 @@ func (l *ModuleLoader) loadModule(modulePath string) (*Module, error) {
 	if err != nil {
 		return nil, err
 	}
+	module.Content = data
 	module.ModuleFile = modulePath
 	module.ModuleDir = filepath.Dir(modulePath)
 	module.Name = filepath.Base(module.ModuleDir)
@@ -149,6 +153,11 @@ func (l *ModuleLoader) loadModule(modulePath string) (*Module, error) {
 		}
 	}
 	return &module, nil
+}
+
+func (m *Module) HashContent(hasher hash.Hash) error {
+	_, err := hasher.Write(m.Content)
+	return err
 }
 
 func (m *Module) GetProperty(key, defaultValue string) string {
