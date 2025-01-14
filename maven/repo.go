@@ -3,6 +3,7 @@ package maven
 import (
 	"encoding/xml"
 	"fmt"
+	"golang.org/x/net/html/charset"
 	"io"
 	"net/http"
 	"net/url"
@@ -75,6 +76,7 @@ func (c *LocalRepository) GetPOM(groupID, artifactID, version string) (POM, erro
 	}
 	defer xmlFile.Close()
 	decoder := xml.NewDecoder(xmlFile)
+	decoder.CharsetReader = charset.NewReaderLabel
 	err = decoder.Decode(&pom)
 	if err == nil {
 		c.poms[gav] = pom

@@ -5,6 +5,7 @@ go 1.23.2
 require (
 	github.com/pterm/pterm v0.12.80
 	github.com/stretchr/testify v1.10.0
+	golang.org/x/net v0.6.0
 )
 
 require (
