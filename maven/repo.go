@@ -89,36 +89,34 @@ func (c *LocalRepository) GetJAR(groupID, artifactID, version string) (string, e
 }
 
 func (c *LocalRepository) getFile(groupID, artifactID, version, file string) (string, error) {
-	path := filepath.Join(c.artifactDir(groupID, artifactID, version), file)
-	_, err := os.Stat(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			err := os.MkdirAll(filepath.Dir(path), 0755)
-			fmt.Printf("mkdir -p %s\n", filepath.Dir(path))
-			if err != nil {
-				return "", err
-			}
-			outFile, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0600)
-			defer outFile.Close()
-			if err != nil {
-				return path, err
-			}
-			for _, remote := range c.remotes {
-				err = fetchFromRemote(remote, groupID, artifactID, version, file, outFile)
-				if err == nil {
-					break
-				}
-				fmt.Printf("error fetching from maven %s: %s\n", remote, err.Error())
-			}
-			// not found ... delete empty file and return error
-			if err != nil {
-				outFile.Close()
-				os.Remove(path)
-				return path, fmt.Errorf("failed to fetch %s from any remote", path)
-			}
-		}
+	artifactPath := filepath.Join(c.artifactDir(groupID, artifactID, version), file)
+	if fileExists(artifactPath) {
+		return artifactPath, nil
 	}
-	return path, err
+	err := os.MkdirAll(filepath.Dir(artifactPath), 0755)
+	fmt.Printf("mkdir -p %s\n", filepath.Dir(artifactPath))
+	if err != nil {
+		return "", err
+	}
+	outFile, err := os.OpenFile(artifactPath, os.O_CREATE|os.O_WRONLY, 0600)
+	defer outFile.Close()
+	if err != nil {
+		return artifactPath, err
+	}
+	for _, remote := range c.remotes {
+		err = fetchFromRemote(remote, groupID, artifactID, version, file, outFile)
+		if err == nil {
+			break
+		}
+		fmt.Printf("error fetching from maven %s: %s\n", remote, err.Error())
+	}
+	// not found ... delete empty file and return error
+	if err != nil {
+		outFile.Close()
+		os.Remove(artifactPath)
+		return artifactPath, fmt.Errorf("failed to fetch %s from any remote", artifactPath)
+	}
+	return artifactPath, err
 }
 
 func (c *LocalRepository) InstallPackage(groupID, artifactID, version, jarPath, pomPath string) error {
@@ -158,7 +156,17 @@ func (c *LocalRepository) InstallPackage(groupID, artifactID, version, jarPath, 
 
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
-	return err == nil
+	if err == nil {
+		return true
+	}
+	if os.IsNotExist(err) {
+		return false
+	}
+	// What are the other errors that can happen ... bad path? No permission?  How likely are those
+	// to occur given the repo is in the user's home dir?  Not likely enough for me to want to add
+	// 3 lines of error checking to every call to see if a path exists, but I also don't want to
+	// quietly ignore an error and be stumped why something is not working.
+	panic(err)
 }
 
 // copyFile is a helper function to copy a file from src to dst
