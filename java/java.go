@@ -429,7 +429,7 @@ func (j *Builder) getBuildDependencies(module *project.Module) ([]string, error)
 			return nil, err
 		}
 		// add module dependencies
-		deps, err := j.ResolveDependencies(module)
+		deps, err := j.ResolveDependencies(ref)
 		if err != nil {
 			return nil, err
 		}
