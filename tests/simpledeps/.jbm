@@ -1,9 +1,0 @@
-<Module Sdk="Java">
-    <Properties>
-        <OutputType>ExecutableJar</OutputType>
-        <MainClass>myapp.Main</MainClass>
-    </Properties>
-    <Packages>
-        <Package URL="com.google.code.gson:gson:2.11.0"/>
-    </Packages>
-</Module>

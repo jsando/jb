@@ -1,0 +1,9 @@
+{
+  "version": "1.0",
+  "output_type": "executable_jar",
+  "main_class": "example.Hello",
+  "javac_args": [
+    "-Werror",
+    "-g"
+  ]
+}

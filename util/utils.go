@@ -73,6 +73,7 @@ func WriteFile(filePath, content string) error {
 }
 
 // ReadFileAsString reads the entire content of a file and returns it as a string
+// Returns empty string if file not found
 func ReadFileAsString(filename string) (string, error) {
 	data, err := ioutil.ReadFile(filename)
 	if err != nil {

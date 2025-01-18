@@ -1,9 +1,0 @@
-<Module Sdk="Java">
-    <Properties>
-        <OutputType>ExecutableJar</OutputType>
-        <MainClass>myapp.Main</MainClass>
-    </Properties>
-    <References>
-        <Module Path="../lib1"/>
-    </References>
-</Module>

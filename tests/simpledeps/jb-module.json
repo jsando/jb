@@ -1,0 +1,7 @@
+{
+  "output_type": "executable_jar",
+  "main_class": "myapp.Main",
+  "dependencies": [
+    "com.google.code.gson:gson:2.11.0"
+  ]
+}

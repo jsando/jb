@@ -1,0 +1,10 @@
+{
+  "version": "1.0",
+  "output_type": "jar",
+  "embeds": [
+    "file1",
+    "file2",
+    "*.txt",
+    "morefiles/subdir/*"
+  ]
+}

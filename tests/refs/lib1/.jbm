@@ -1,5 +1,0 @@
-<Module Sdk="Java">
-    <Properties>
-        <OutputType>Jar</OutputType>
-    </Properties>
-</Module>

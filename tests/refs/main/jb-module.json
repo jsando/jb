@@ -1,0 +1,8 @@
+{
+  "version": "1.0",
+  "output_type": "executable_jar",
+  "main_class": "myapp.Main",
+  "references": [
+    "../lib1"
+  ]
+}

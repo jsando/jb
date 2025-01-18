@@ -1,7 +1,7 @@
 package project
 
 import (
-	"encoding/xml"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash"
@@ -11,49 +11,42 @@ import (
 	"strings"
 )
 
-const ModuleFilename = ".jbm"
-
+const ModuleFilename = "jb-module.json"
 const DefaultGroupID = "com.example"
 const DefaultVersion = "1.0.0-snapshot"
 
+type ModuleFileJSON struct {
+	Group        string   `json:"group,omitempty"`
+	Version      string   `json:"version,omitempty"`
+	CompileArgs  []string `json:"javac_args,omitempty"`
+	OutputType   string   `json:"output_type,omitempty"`
+	MainClass    string   `json:"main_class,omitempty"`
+	Embeds       []string `json:"embeds,omitempty"`
+	References   []string `json:"references,omitempty"`
+	Dependencies []string `json:"dependencies,omitempty"`
+}
+
 type Module struct {
-	XMLName    xml.Name    `xml:"Module"`
-	Content    []byte      `xml:"-"`        // raw file content
-	ModuleFile string      `xml:"-"`        // Absolute path to jbm file
-	ModuleDir  string      `xml:"-"`        // Absolute path to module directory
-	GroupID    string      `xml:"GroupID"`  // Organization (used as maven group id)
-	Name       string      `xml:"-"`        // Simple module name (ie the dir name)
-	Version    string      `xml:"Version"`  // Version as a semver string, defaults to "1.0.0-snapshot"
-	SDK        string      `xml:"Sdk,attr"` // Name of dev kit (which builder to use)
-	Properties *Properties `xml:"Properties"`
-	References *References `xml:"References"`
-	Packages   *Packages   `xml:"Packages"`
+	ModuleFileBytes []byte // to compute hash for up-to-date check
+	ModuleDirAbs    string
+	Group           string
+	Name            string
+	Version         string
+	CompileArgs     []string
+	OutputType      string
+	MainClass       string
+	Embeds          []string
+	References      []*Module
+	Dependencies    []*Dependency
 }
 
-type Properties struct {
-	Properties []Property `xml:",any"` // Collection of key/value pairs to pass to builder
-}
-
-type Property struct {
-	XMLName xml.Name
-	Value   string `xml:",chardata"`
-}
-
-type References struct {
-	Modules []*ModuleReference `xml:"Module"`
-}
-
-type ModuleReference struct {
-	Path   string  `xml:"Path,attr"`
-	Module *Module `xml:"-"`
-}
-
-type Packages struct {
-	References []*PackageReference `xml:"Package"`
-}
-
-type PackageReference struct {
-	URL string `xml:"URL,attr"`
+type Dependency struct {
+	Coordinates string        // raw string given such as "org.junit:junit:1.2.3"
+	Group       string        // maven organization id
+	Artifact    string        // maven artifact id
+	Version     string        // maven version string
+	Path        string        // empty unless resolved, path to cache folder containing artifacts (pom, jar)
+	Transitive  []*Dependency // nil unless resolved
 }
 
 type ModuleLoader struct {
@@ -66,119 +59,160 @@ func NewModuleLoader() *ModuleLoader {
 	}
 }
 
-func (l *ModuleLoader) GetModule(path string) (*Module, error) {
+func (l *ModuleLoader) GetModule(modulePath string) (*Module, error) {
 	var err error
-	if !filepath.IsAbs(path) {
+
+	// Require absolute path to avoid confusion with which base to use for relative paths,
+	// the initial module loaded would be relative to the cwd but modules use relative
+	// references to each other from their point of view.
+	if !filepath.IsAbs(modulePath) {
 		return nil, errors.New("path must be absolute")
 	}
-	module := l.modules[path]
-	if module == nil {
-		module, err = l.loadModule(path)
-		if err != nil {
-			return nil, err
-		}
-		l.modules[module.Name] = module
-		if module.References.Modules == nil {
-			module.References.Modules = make([]*ModuleReference, 0)
-		}
 
-		// Load module references
-		// TODO erm .. how to detect circular reference?
-		for _, ref := range module.References.Modules {
-			refPath := filepath.Join(module.ModuleDir, ref.Path)
-			refModule, err := l.GetModule(refPath)
-			if err != nil {
-				return module, err
-			}
-			ref.Module = refModule
-		}
-	}
-	return module, nil
-}
-
-func (l *ModuleLoader) loadModule(modulePath string) (*Module, error) {
-	var err error
-	info, err := os.Stat(modulePath)
+	// Normalize the path to ensure it points to the module file and not just the folder
+	modulePath, err = getModuleFilePath(modulePath)
 	if err != nil {
 		return nil, err
 	}
-	// If given a folder, find the module file in it
-	if info.IsDir() {
-		modulePath = filepath.Join(modulePath, ModuleFilename)
+
+	// already loaded?
+	module := l.modules[modulePath]
+	if module != nil {
+		return module, nil
 	}
-	file, err := os.Open(modulePath)
+
+	// read module file contents
+	data, err := readFile(modulePath)
+	if err != nil {
+		return nil, err
+	}
+
+	// deserialize and verify, set defaults
+	moduleFile, err := loadModuleFile(data)
+	if err != nil {
+		return nil, err
+	}
+
+	// create module
+	module = &Module{}
+	module.ModuleFileBytes = data
+	module.ModuleDirAbs = filepath.Dir(modulePath)
+	module.Group = moduleFile.Group
+	module.Name = filepath.Base(module.ModuleDirAbs)
+	module.Version = moduleFile.Version
+	module.CompileArgs = moduleFile.CompileArgs
+	module.OutputType = moduleFile.OutputType
+	module.MainClass = moduleFile.MainClass
+	module.Embeds = moduleFile.Embeds
+
+	module.Dependencies = make([]*Dependency, len(moduleFile.Dependencies))
+	for i, s := range moduleFile.Dependencies {
+		parts := strings.Split(s, ":")
+		if len(parts) != 3 {
+			return nil, fmt.Errorf("invalid dependency '%s' in module %s", s, module.Name)
+		}
+		dep := &Dependency{
+			Coordinates: s,
+			Group:       parts[0],
+			Artifact:    parts[1],
+			Version:     parts[2],
+		}
+		if dep.Group == "" || dep.Artifact == "" || dep.Version == "" {
+			return nil, fmt.Errorf("invalid dependency '%s' in module %s", s, module.Name)
+		}
+		module.Dependencies[i] = dep
+	}
+
+	// save new module to cache before recursively loading references to other modules
+	l.modules[module.Name] = module
+
+	// resolve module references
+	module.References = []*Module{}
+	if moduleFile.References != nil {
+		for _, ref := range moduleFile.References {
+			refModulePath := filepath.Join(module.ModuleDirAbs, ref)
+			refModule, err := l.GetModule(refModulePath)
+			// todo error reporting ("error loading module <refname>, loaded from module <thisname>: error")
+			if err != nil {
+				return nil, err
+			}
+			module.References = append(module.References, refModule)
+		}
+	}
+
+	return module, nil
+}
+
+// If given a folder, find the module file in it
+func getModuleFilePath(modulePath string) (string, error) {
+	moduleFilePath := modulePath
+	info, err := os.Stat(modulePath)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		moduleFilePath = filepath.Join(modulePath, ModuleFilename)
+	} else if !strings.HasSuffix(modulePath, ModuleFilename) {
+		return "", fmt.Errorf("module file must be named '%s'", ModuleFilename)
+	}
+	return moduleFilePath, nil
+}
+
+func readFile(path string) ([]byte, error) {
+	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
+	return ioutil.ReadAll(file)
+}
 
-	data, err := ioutil.ReadAll(file)
+func loadModuleFile(data []byte) (*ModuleFileJSON, error) {
+	var m = &ModuleFileJSON{}
+	err := json.Unmarshal(data, m)
 	if err != nil {
 		return nil, err
 	}
-
-	// todo verify schema and give hints if errors found
-	// a) verify all parameters
-	// b) does go return an error if nothing mapped?
-	var module = Module{}
-	err = xml.Unmarshal(data, &module)
-	if err != nil {
-		return nil, err
+	if m.Version == "" {
+		// todo emit warning
+		m.Version = DefaultVersion
 	}
-	module.Content = data
-	module.ModuleFile = modulePath
-	module.ModuleDir = filepath.Dir(modulePath)
-	module.Name = filepath.Base(module.ModuleDir)
-	if module.References == nil {
-		module.References = &References{
-			Modules: make([]*ModuleReference, 0),
-		}
+	if m.Group == "" {
+		// todo emit warning
+		m.Group = DefaultGroupID
 	}
-	if module.Properties == nil {
-		module.Properties = &Properties{
-			Properties: make([]Property, 0),
-		}
+	switch m.OutputType {
+	case "jar":
+	case "executable_jar":
+	case "":
+		m.OutputType = "jar"
+	default:
+		return nil, fmt.Errorf("invalid output type '%s'", m.OutputType)
 	}
-	if module.Version == "" {
-		module.Version = DefaultVersion
-		fmt.Printf("WARNING: no 'Version' specified for module %s, using default %s\n", module.Name, module.Version)
+	if m.OutputType == "jar" && m.MainClass != "" {
+		return nil, fmt.Errorf("output type 'jar' does not support a main class, use 'executable_jar' instead")
 	}
-	if module.GroupID == "" {
-		module.GroupID = DefaultGroupID
-		fmt.Printf("WARNING: no 'GroupID' specified for module %s, using default %s\n", module.Name, module.GroupID)
+	if m.OutputType == "executable_jar" && m.MainClass == "" {
+		return nil, fmt.Errorf("output type 'executable_jar' requires a main class")
 	}
-	if module.Packages == nil {
-		module.Packages = &Packages{
-			References: make([]*PackageReference, 0),
-		}
+	if m.CompileArgs == nil {
+		m.CompileArgs = []string{}
 	}
-	return &module, nil
+	if m.Embeds == nil {
+		m.Embeds = []string{}
+	}
+	if m.Dependencies == nil {
+		m.Dependencies = []string{}
+	}
+	if m.References == nil {
+		m.References = []string{}
+	}
+	return m, nil
 }
 
 func (m *Module) HashContent(hasher hash.Hash) error {
-	_, err := hasher.Write(m.Content)
+	_, err := hasher.Write(m.ModuleFileBytes)
 	return err
-}
-
-func (m *Module) GetProperty(key, defaultValue string) string {
-	value := defaultValue
-	for _, property := range m.Properties.Properties {
-		if property.XMLName.Local == key {
-			value = strings.TrimSpace(property.Value)
-			break
-		}
-	}
-	return value
-}
-
-func (m *Module) GetPropertyList(key string) []string {
-	var values []string
-	for _, property := range m.Properties.Properties {
-		if property.XMLName.Local == key {
-			values = append(values, strings.TrimSpace(property.Value))
-		}
-	}
-	return values
 }
 
 // GetModuleReferencesInBuildOrder returns the list of referenced modules this module depends on,
@@ -199,8 +233,8 @@ func (m *Module) GetModuleReferencesInBuildOrder() ([]*Module, error) {
 			return fmt.Errorf("circular reference detected for module %s", m.Name)
 		}
 		stack[m] = true
-		for _, ref := range m.References.Modules {
-			if err := visit(ref.Module); err != nil {
+		for _, ref := range m.References {
+			if err := visit(ref); err != nil {
 				return err
 			}
 		}
@@ -209,8 +243,8 @@ func (m *Module) GetModuleReferencesInBuildOrder() ([]*Module, error) {
 		result = append(result, m)
 		return nil
 	}
-	for _, ref := range m.References.Modules {
-		if err := visit(ref.Module); err != nil {
+	for _, ref := range m.References {
+		if err := visit(ref); err != nil {
 			return nil, err
 		}
 	}

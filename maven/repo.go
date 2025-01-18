@@ -192,7 +192,7 @@ func fetchFromRemote(mavenBaseURL string, groupID, artifactID, version, file str
 	groupIDWithSlashes := strings.ReplaceAll(groupID, ".", "/")
 	u, err := url.Parse(mavenBaseURL)
 	if err != nil {
-		return fmt.Errorf("failed to parse maven URL: %w", err)
+		return fmt.Errorf("failed to parse maven Coordinates: %w", err)
 	}
 	u.Path = path.Join(u.Path, filepath.Join(filepath.SplitList(groupIDWithSlashes)...), artifactID, version, file)
 	fileURL := u.String()
