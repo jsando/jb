@@ -1,6 +1,7 @@
 package java
 
 import (
+	"bufio"
 	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -20,21 +22,22 @@ const (
 )
 
 type Builder struct {
-	repo *maven.LocalRepository
+	repo   *maven.LocalRepository
+	logger project.BuildLog
 }
 
-func NewBuilder() *Builder {
+func NewBuilder(logger project.BuildLog) *Builder {
 	return &Builder{
-		repo: maven.OpenLocalRepository(),
+		repo:   maven.OpenLocalRepository(),
+		logger: logger,
 	}
 }
 
-func (j *Builder) Clean(module *project.Module) error {
+func (j *Builder) Clean(module *project.Module) {
+	task := j.logger.TaskStart("cleaning build dir")
 	buildDir := filepath.Join(module.ModuleDirAbs, "build")
-	if err := os.RemoveAll(buildDir); err != nil {
-		return fmt.Errorf("failed to remove build dir %s: %w", buildDir, err)
-	}
-	return nil
+	err := os.RemoveAll(buildDir)
+	task.Done(err)
 }
 
 func (j *Builder) Run(module *project.Module, progArgs []string) error {
@@ -44,7 +47,7 @@ func (j *Builder) Run(module *project.Module, progArgs []string) error {
 	cmd := exec.Command("java", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
+	//fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
 	err := cmd.Run()
 	if err != nil {
 		return err
@@ -57,14 +60,19 @@ func (j *Builder) getModuleJarPath(module *project.Module) string {
 	return filepath.Join(buildDir, module.Name+"-"+module.Version+".jar")
 }
 
-func (j *Builder) Build(module *project.Module) error {
+func (j *Builder) Build(module *project.Module) {
+	j.logger.ModuleStart(module.Name)
+
 	// Parse and validate build args for the module
 	jarDate := ""
 
 	// Gather java source files
 	sources, err := util.FindFilesBySuffixR(module.ModuleDirAbs, ".java")
-	if err != nil {
-		return fmt.Errorf("failed to find java sources: %w", err)
+	if j.logger.CheckError("finding java sources", err) {
+		return
+	}
+	if len(sources) == 0 {
+		fmt.Printf("warning: no java sources found in %s\n", module.ModuleDirAbs)
 	}
 	if len(sources) == 0 {
 		fmt.Printf("warning: no java sources found in %s\n", module.ModuleDirAbs)
@@ -72,6 +80,9 @@ func (j *Builder) Build(module *project.Module) error {
 
 	// Gather embeds
 	embedFiles, err := util.FindFilesByGlob(module.ModuleDirAbs, module.Embeds)
+	if j.logger.CheckError("finding embeds", err) {
+		return
+	}
 
 	// Compute sha1(project-file, sources, embeds) and see if we're up to date
 	hasher := sha1.New()
@@ -85,18 +96,18 @@ func (j *Builder) Build(module *project.Module) error {
 	for _, embed := range embedFiles {
 		hasher.Write([]byte(embed.Path))
 		bytes := make([]byte, 8)
-		fmt.Printf("file %s modtime %d\n", embed.Path, embed.Info.ModTime().UnixNano())
+		//fmt.Printf("file %s modtime %d\n", embed.Path, embed.Info.ModTime().UnixNano())
 		binary.LittleEndian.PutUint64(bytes, uint64(embed.Info.ModTime().UnixNano()))
 		hasher.Write(bytes)
 	}
 	hash := hex.EncodeToString(hasher.Sum(nil))
 	oldHash, err := util.ReadFileAsString(filepath.Join(module.ModuleDirAbs, "build", buildHashFile))
-	if err != nil {
-		return fmt.Errorf("failed to read build hash: %w", err)
+	if j.logger.CheckError("reading build hash", err) {
+		return
 	}
 	if hash == oldHash {
-		fmt.Printf("module %s is up to date\n", module.Name)
-		return nil
+		j.logger.TaskStart("up to date").Done(nil)
+		return
 	}
 
 	// Create the build dir(s)
@@ -105,23 +116,23 @@ func (j *Builder) Build(module *project.Module) error {
 	buildClasses := filepath.Join(buildTmpDir, "classes")
 
 	err = os.RemoveAll(buildDir)
-	if err != nil {
-		return fmt.Errorf("failed to remove build dir %s: %w", buildDir, err)
+	if j.logger.CheckError("removing build dir", err) {
+		return
 	}
 	err = os.MkdirAll(buildClasses, os.ModePerm)
-	if err != nil {
-		return fmt.Errorf("failed to create build dir %s: %w", buildClasses, err)
+	if j.logger.CheckError(fmt.Sprintf("creating build dir %s", buildClasses), err) {
+		return
 	}
 
 	// For compilation, use the absolute paths to all jar dependencies
 	classPath := ""
 	deps, err := module.GetModuleReferencesInBuildOrder()
-	if err != nil {
-		return fmt.Errorf("failed to resolve dependencies: %w", err)
+	if j.logger.CheckError("getting module references", err) {
+		return
 	}
 	compileClasspath, err := j.getBuildDependencies(module)
-	if err != nil {
-		return fmt.Errorf("failed to get build dependencies: %w", err)
+	if j.logger.CheckError("getting build dependencies", err) {
+		return
 	}
 	if len(compileClasspath) > 0 {
 		classPath = "--class-path " + strings.Join(compileClasspath, string(os.PathListSeparator))
@@ -129,41 +140,50 @@ func (j *Builder) Build(module *project.Module) error {
 
 	// Compile java sources (if there are any)
 	if len(sources) > 0 {
-		if err := j.compileJava(module, buildTmpDir, buildClasses, classPath, module.CompileArgs, sources); err != nil {
-			return fmt.Errorf("failed to compile java sources: %w", err)
+		task := j.logger.TaskStart("compile java sources")
+		err := j.compileJava(module, task, buildTmpDir, buildClasses, classPath, module.CompileArgs, sources)
+		if task.Done(err) {
+			return
 		}
 	}
 
 	// Copy embeds to output folder then jar can just jar everything
+	task := j.logger.TaskStart("building jar")
 	for _, embed := range embedFiles {
 		relPath, err := filepath.Rel(module.ModuleDirAbs, embed.Path)
-		if err != nil {
-			return fmt.Errorf("failed to get relative path for embed %s: %w", embed.Path, err)
+		if j.logger.CheckError("getting relative path for embed", err) {
+			return
 		}
 		dst := filepath.Join(buildClasses, relPath)
-		if err := os.MkdirAll(filepath.Dir(dst), os.ModePerm); err != nil {
-			return fmt.Errorf("failed to create directory %s: %w", filepath.Dir(dst), err)
+		err = os.MkdirAll(filepath.Dir(dst), os.ModePerm)
+		if j.logger.CheckError(fmt.Sprintf("creating directory %s", filepath.Dir(dst)), err) {
+			return
 		}
-		if err := util.CopyFile(embed.Path, dst); err != nil {
-			return fmt.Errorf("failed to copy embed %s to %s: %w", embed.Path, dst, err)
+
+		err = util.CopyFile(embed.Path, dst)
+		if j.logger.CheckError(fmt.Sprintf("copying embed %s to %s", embed.Path, dst), err) {
+			return
 		}
 	}
 
 	// Build into .jar
-	if err := j.buildJar(module, buildDir, jarDate, module.MainClass, compileClasspath, buildTmpDir, buildClasses); err != nil {
-		return fmt.Errorf("failed to build jar: %w", err)
+	err = j.buildJar(module, buildDir, jarDate, module.MainClass, compileClasspath, buildTmpDir, buildClasses)
+	if task.Done(err) {
+		return
 	}
 
 	// write pom file
-	if err := j.writePOM(module, deps); err != nil {
-		return fmt.Errorf("failed to write pom: %w", err)
+	err = j.writePOM(module, deps)
+	if j.logger.CheckError("writing pom file", err) {
+		return
 	}
 
 	// write build hash
-	return util.WriteFile(filepath.Join(buildDir, buildHashFile), hash)
+	err = util.WriteFile(filepath.Join(buildDir, buildHashFile), hash)
+	j.logger.CheckError("writing build hash", err)
 }
 
-func (j *Builder) compileJava(module *project.Module, buildTmpDir, buildClasses, classPath string, extraFlags []string, sourceFiles []util.SourceFileInfo) error {
+func (j *Builder) compileJava(module *project.Module, task project.TaskLog, buildTmpDir, buildClasses, classPath string, extraFlags []string, sourceFiles []util.SourceFileInfo) error {
 	// Write javac args to a single file, avoid potential shell args length limitation (esp with large classpath)
 	buildArgsPath := filepath.Join(buildTmpDir, "javac-flags.txt")
 	buildArgs := fmt.Sprintf("-d %s\n%s\n%s\n", buildClasses, strings.Join(extraFlags, "\n"), classPath)
@@ -186,7 +206,55 @@ func (j *Builder) compileJava(module *project.Module, buildTmpDir, buildClasses,
 	sourceFilesPathRel, _ := filepath.Rel(module.ModuleDirAbs, sourceFilesPath)
 
 	// Compile sources
-	return execCommand("javac", module.ModuleDirAbs, "@"+optionsPathRel, "@"+sourceFilesPathRel)
+	cmd := exec.Command("javac", "@"+optionsPathRel, "@"+sourceFilesPathRel)
+	cmd.Dir = module.ModuleDirAbs
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+
+	// Start the javac process
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	// Initialize counters
+	warningCount, errorCount := 0, 0
+
+	// Regex patterns for warnings and errors
+	warningPattern := regexp.MustCompile(`(?i)warning`)
+	errorPattern := regexp.MustCompile(`(?i)error`)
+
+	// Read and process output streams
+	processStream := func(scanner *bufio.Scanner) {
+		for scanner.Scan() {
+			line := scanner.Text()
+
+			switch {
+			case errorPattern.MatchString(line):
+				errorCount++
+				task.Error(line)
+			case warningPattern.MatchString(line):
+				warningCount++
+				task.Warn(line)
+			default:
+				task.Info(line)
+			}
+		}
+	}
+
+	// Scan stderr and stdout
+	go processStream(bufio.NewScanner(stderr))
+	go processStream(bufio.NewScanner(stdout))
+
+	// Wait for javac to finish
+	return cmd.Wait()
 }
 
 func execCommand(name string, dir string, args ...string) error {
@@ -194,7 +262,7 @@ func execCommand(name string, dir string, args ...string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Dir = dir
-	fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
+	//fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
 	return cmd.Run()
 }
 
@@ -319,7 +387,7 @@ func (j *Builder) resolveDependency(dep *project.Dependency) error {
 	if dep.Path != "" {
 		return nil
 	}
-	fmt.Printf("resolving %s:%s:%s\n", dep.Group, dep.Artifact, dep.Version)
+	//fmt.Printf("resolving %s:%s:%s\n", dep.Group, dep.Artifact, dep.Version)
 	pom, err := j.repo.GetPOM(dep.Group, dep.Artifact, dep.Version)
 	if err != nil {
 		return err
@@ -342,7 +410,10 @@ func (j *Builder) resolveDependency(dep *project.Dependency) error {
 			continue // Skip test and provided scope dependencies
 		}
 		gav := maven.GAV(pomChild.GroupID, pomChild.ArtifactID, pomChild.Version)
-		fmt.Printf("recursive resolving %s\n", gav)
+		if pomChild.GroupID == "" || pomChild.ArtifactID == "" || pomChild.Version == "" {
+			return fmt.Errorf("invalid maven package '%s' referenced from %s", gav, dep.Coordinates)
+		}
+		//fmt.Printf("recursive resolving %s\n", gav)
 		child := &project.Dependency{
 			Coordinates: gav,
 			Group:       pomChild.GroupID,

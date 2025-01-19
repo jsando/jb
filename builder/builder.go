@@ -11,12 +11,14 @@ type moduleBuilder struct {
 	loader  *project.ModuleLoader
 	builder *java.Builder
 	module  *project.Module
+	logger  project.BuildLog
 }
 
-func newModuleBuilder(path string) (*moduleBuilder, error) {
+func newModuleBuilder(path string, logger project.BuildLog) (*moduleBuilder, error) {
 	builder := &moduleBuilder{
 		loader:  project.NewModuleLoader(),
-		builder: java.NewBuilder(),
+		builder: java.NewBuilder(logger),
+		logger:  logger,
 	}
 	// Load the module and recursively load its referenced modules
 	path, err := filepath.Abs(path)
@@ -28,60 +30,65 @@ func newModuleBuilder(path string) (*moduleBuilder, error) {
 	return builder, nil
 }
 
-func (b *moduleBuilder) Build() error {
+func (b *moduleBuilder) Build() {
 	references, err := b.module.GetModuleReferencesInBuildOrder()
-	if err != nil {
-		return fmt.Errorf("error resolving module references: %w", err)
+	if b.logger.CheckError("Resolving module references", err) {
+		return
 	}
 	// build referenced modules first
 	for _, ref := range references {
-		err = b.builder.Build(ref)
-		if err != nil {
-			return fmt.Errorf("error building module %s: %w", ref.Name, err)
+		b.builder.Build(ref)
+
+		// abort if errors
+		if b.logger.Failed() {
+			return
 		}
 	}
+
 	// build the target module
-	err = b.builder.Build(b.module)
-	if err != nil {
-		return fmt.Errorf("error building module %s: %w", b.module.Name, err)
-	}
-	return nil
+	b.builder.Build(b.module)
 }
 
 func BuildModule(path string) error {
-	builder, err := newModuleBuilder(path)
+	logger := NewBuildLog()
+	builder, err := newModuleBuilder(path, logger)
 	if err != nil {
 		return err
 	}
-	return builder.Build()
+	builder.Build()
+	logger.BuildFinish()
+	return nil
 }
 
 func BuildAndRunModule(path string, args []string) error {
-	builder, err := newModuleBuilder(path)
+	logger := NewBuildLog()
+	builder, err := newModuleBuilder(path, logger)
 	if err != nil {
 		return err
 	}
-	if err = builder.Build(); err != nil {
-		return err
-	}
+	builder.Build()
+	logger.BuildFinish()
 	return builder.builder.Run(builder.module, args)
 }
 
 func BuildAndPublishModule(path string) error {
-	builder, err := newModuleBuilder(path)
+	logger := NewBuildLog()
+	builder, err := newModuleBuilder(path, logger)
 	if err != nil {
 		return err
 	}
-	if err = builder.Build(); err != nil {
-		return err
-	}
+	builder.Build()
+	logger.BuildFinish()
 	return builder.builder.Publish(builder.module, "", "", "")
 }
 
 func Clean(path string) error {
-	builder, err := newModuleBuilder(path)
+	logger := NewBuildLog()
+	builder, err := newModuleBuilder(path, logger)
 	if err != nil {
 		return err
 	}
-	return builder.builder.Clean(builder.module)
+	builder.builder.Clean(builder.module)
+	logger.BuildFinish()
+	return nil
 }

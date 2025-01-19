@@ -26,6 +26,22 @@ type ModuleFileJSON struct {
 	Dependencies []string `json:"dependencies,omitempty"`
 }
 
+type BuildLog interface {
+	Failed() bool
+	BuildStart()
+	BuildFinish()
+	ModuleStart(name string)
+	CheckError(task string, err error) bool
+	TaskStart(name string) TaskLog
+}
+
+type TaskLog interface {
+	Info(msg string)
+	Warn(msg string)
+	Error(msg string)
+	Done(err error) bool
+}
+
 type Module struct {
 	ModuleFileBytes []byte // to compute hash for up-to-date check
 	ModuleDirAbs    string
