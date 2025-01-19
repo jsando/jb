@@ -19,16 +19,16 @@ const MAVEN_CENTRAL_URL = "https://repo.maven.apache.org/maven2/"
 type LocalRepository struct {
 	baseDir string
 	remotes []string
-	poms    map[string]POM
+	poms    map[string]*POM
 }
 
-var mavenVarPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
+var mavenVarPattern = regexp.MustCompile(`\$\{([a-zA-Z0-9._-]+)\}`)
 
 func OpenLocalRepository() *LocalRepository {
 	return &LocalRepository{
 		baseDir: "~/.jb/repository",
 		remotes: []string{MAVEN_CENTRAL_URL},
-		poms:    make(map[string]POM),
+		poms:    make(map[string]*POM),
 	}
 }
 
@@ -61,13 +61,16 @@ func (jc *LocalRepository) artifactDir(groupID, artifactID, version string) stri
 	return filepath.Join(strings.ReplaceAll(jc.baseDir, "~", homeDir), relPath)
 }
 
-func (c *LocalRepository) GetPOM(groupID, artifactID, version string) (POM, error) {
+func (c *LocalRepository) GetPOM(groupID, artifactID, version string) (*POM, error) {
+	if groupID == "" || artifactID == "" || version == "" {
+		return nil, fmt.Errorf("invalid maven coordinates %s:%s:%s", groupID, artifactID, version)
+	}
 	gav := GAV(groupID, artifactID, version)
 	pom, found := c.poms[gav]
 	if found {
 		return pom, nil
 	}
-	pom = POM{}
+	pom = &POM{}
 	pomFile := pomFile(artifactID, version)
 	path, err := c.getFile(groupID, artifactID, version, pomFile)
 	if err != nil {
@@ -85,9 +88,50 @@ func (c *LocalRepository) GetPOM(groupID, artifactID, version string) (POM, erro
 		c.poms[gav] = pom
 	}
 
-	if pom.Parent != nil {
-		err = c.expandParentProperties(&pom)
+	if pom.DependencyManagement == nil {
+		pom.DependencyManagement = &DependencyManagement{
+			Dependencies: make([]Dependency, 0),
+		}
 	}
+	if pom.Dependencies == nil {
+		pom.Dependencies = make([]Dependency, 0)
+	}
+
+	if pom.Parent != nil {
+		err = c.expandParentProperties(pom)
+		if err != nil {
+			return nil, err
+		}
+	}
+	pom.SetProperty("project.version", pom.Version)
+
+	for i := range pom.DependencyManagement.Dependencies {
+		pom.DependencyManagement.Dependencies[i].Version = pom.Expand(pom.DependencyManagement.Dependencies[i].Version)
+		if pom.DependencyManagement.Dependencies[i].Scope == "import" && pom.DependencyManagement.Dependencies[i].Type == "pom" {
+			// nested include dependency management from this other pom
+			dep := pom.DependencyManagement.Dependencies[i]
+			includePOM, err := c.GetPOM(dep.GroupID, dep.ArtifactID, dep.Version)
+			if err != nil {
+				return nil, err
+			}
+			mergeParentDeps(pom.DependencyManagement, includePOM.DependencyManagement)
+		}
+	}
+	for i := range pom.Dependencies {
+		if pom.Dependencies[i].Version == "" {
+			dmDep := pom.findDependency(pom.Dependencies[i].GroupID, pom.Dependencies[i].ArtifactID)
+			if dmDep != nil {
+				pom.Dependencies[i].Version = dmDep.Version
+			}
+		}
+	}
+	for i := range pom.Dependencies {
+		if pom.Dependencies[i].Version != "" {
+			pom.Dependencies[i].Version = pom.Expand(pom.Dependencies[i].Version)
+		}
+	}
+
+	// todo sanity check, make sure POM has version and all
 
 	// Pretty print the POM to the terminal
 	dump(pom)
@@ -95,7 +139,7 @@ func (c *LocalRepository) GetPOM(groupID, artifactID, version string) (POM, erro
 	return pom, err
 }
 
-func dump(pom POM) {
+func dump(pom *POM) {
 
 	fmt.Printf("POM Details:\n")
 	fmt.Printf("GroupID: %s\n", pom.GroupID)
@@ -129,7 +173,6 @@ func dump(pom POM) {
 }
 
 func (c *LocalRepository) expandParentProperties(pom *POM) error {
-	fmt.Printf("fetching parent pom\n")
 	parent, err := c.GetPOM(pom.Parent.GroupID, pom.Parent.ArtifactID, pom.Parent.Version)
 	if err != nil {
 		return err
@@ -141,46 +184,15 @@ func (c *LocalRepository) expandParentProperties(pom *POM) error {
 	if pom.Version == "" {
 		pom.Version = parent.Version
 	}
-	if pom.DependencyManagement == nil {
-		pom.DependencyManagement = &DependencyManagement{
-			Dependencies: make([]Dependency, 0),
-		}
-	}
 	mergeParentDeps(pom.DependencyManagement, parent.DependencyManagement)
-	if pom.Dependencies == nil {
-		pom.Dependencies = make([]Dependency, 0)
-	}
-	properties := mergeParentProperties(pom, &parent)
-	properties["project.version"] = pom.Version
-	for key, value := range properties {
-		fmt.Printf("setting %s to %s\n", key, value)
-	}
-	for i := range pom.DependencyManagement.Dependencies {
-		pom.DependencyManagement.Dependencies[i].Version = resolveMavenFields(pom.DependencyManagement.Dependencies[i].Version, properties)
-		if pom.DependencyManagement.Dependencies[i].Scope == "import" && pom.DependencyManagement.Dependencies[i].Type == "pom" {
-			// nested include dependency management from this other pom
-			dep := pom.DependencyManagement.Dependencies[i]
-			includePOM, err := c.GetPOM(dep.GroupID, dep.ArtifactID, dep.Version)
-			if err != nil {
-				return err
-			}
-			mergeParentDeps(pom.DependencyManagement, includePOM.DependencyManagement)
-		}
-	}
-	for i := range pom.Dependencies {
-		if pom.Dependencies[i].Version == "" {
-			dmDep := pom.findDependency(pom.Dependencies[i].GroupID, pom.Dependencies[i].ArtifactID)
-			if dmDep != nil {
-				pom.Dependencies[i].Version = resolveMavenFields(dmDep.Version, properties)
-			}
-		}
-	}
+	mergeParentProperties(pom, parent)
+	pom.SetProperty("project.parent.version", parent.Version)
 	return nil
 }
 
-// resolveMavenFields replaces ${...} placeholders in a Maven field string with their corresponding values from properties map.
+// ResolveMavenFields replaces ${...} placeholders in a Maven field string with their corresponding values from properties map.
 // If a placeholder cannot be resolved, it remains unchanged.
-func resolveMavenFields(input string, properties map[string]string) string {
+func ResolveMavenFields(input string, properties map[string]string) string {
 
 	// Replace function to resolve each placeholder
 	result := mavenVarPattern.ReplaceAllStringFunc(input, func(match string) string {
@@ -207,19 +219,22 @@ func (p POM) findDependency(groupID, artifactID string) *Dependency {
 	return nil
 }
 
-func mergeParentProperties(child, parent *POM) map[string]string {
-	properties := make(map[string]string)
-	if parent != nil && parent.Properties != nil {
+func mergeParentProperties(child, parent *POM) {
+	if child.Properties == nil {
+		child.Properties = &Properties{
+			Properties: make([]Property, 0),
+		}
+	}
+	oldProps := child.Properties.Properties
+	child.Properties.Properties = make([]Property, 0)
+	if parent.Properties != nil && parent.Properties.Properties != nil {
 		for _, prop := range parent.Properties.Properties {
-			properties[prop.XMLName.Local] = prop.Value
+			child.Properties.Properties = append(child.Properties.Properties, prop)
 		}
 	}
-	if child.Properties != nil {
-		for _, prop := range child.Properties.Properties {
-			properties[prop.XMLName.Local] = prop.Value
-		}
+	for _, prop := range oldProps {
+		child.SetProperty(prop.XMLName.Local, prop.Value)
 	}
-	return properties
 }
 
 func mergeParentDeps(child *DependencyManagement, parent *DependencyManagement) {

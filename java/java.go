@@ -325,8 +325,13 @@ func (j *Builder) buildJar(module *project.Module,
 		jarArgs = append(jarArgs, "--main-class", mainClass)
 
 		manifestClasspath := ""
+		firstLine := true
 		for _, dep := range jarPaths {
 			jarName := filepath.Base(dep)
+			if !firstLine {
+				manifestClasspath += "\n "
+			}
+			firstLine = false
 			manifestClasspath += jarName + " "
 			if err := util.CopyFile(dep, filepath.Join(buildDir, jarName)); err != nil {
 				return err
@@ -393,7 +398,7 @@ func (j *Builder) resolveDependency(dep *project.Dependency) error {
 		return err
 	}
 	switch pom.Packaging {
-	case "", "jar":
+	case "", "jar", "bundle":
 		jarPath, err := j.repo.GetJAR(dep.Group, dep.Artifact, dep.Version)
 		if err != nil {
 			return err
@@ -447,8 +452,10 @@ func (j *Builder) getBuildDependencies(module *project.Module) ([]string, error)
 		if existingVersion, exists := seenDeps[key]; exists {
 			// Check for version conflict
 			if existingVersion != pkg.Version {
-				return fmt.Errorf("version conflict for dependency %s: %s vs %s",
-					key, existingVersion, pkg.Version)
+				fmt.Printf("evict %s:%s (have %s)\n", key, pkg.Version, existingVersion)
+				return nil
+				//return fmt.Errorf("version conflict for dependency %s: %s vs %s",
+				//	key, existingVersion, pkg.Version)
 			}
 		} else {
 			// Store seen dependency version
