@@ -452,7 +452,7 @@ func (j *Builder) getBuildDependencies(module *project.Module) ([]string, error)
 		if existingVersion, exists := seenDeps[key]; exists {
 			// Check for version conflict
 			if existingVersion != pkg.Version {
-				fmt.Printf("evict %s:%s (have %s)\n", key, pkg.Version, existingVersion)
+				//fmt.Printf("evict %s:%s (have %s)\n", key, pkg.Version, existingVersion)
 				return nil
 				//return fmt.Errorf("version conflict for dependency %s: %s vs %s",
 				//	key, existingVersion, pkg.Version)

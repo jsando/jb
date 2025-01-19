@@ -134,7 +134,7 @@ func (c *LocalRepository) GetPOM(groupID, artifactID, version string) (*POM, err
 	// todo sanity check, make sure POM has version and all
 
 	// Pretty print the POM to the terminal
-	dump(pom)
+	//dump(pom)
 
 	return pom, err
 }

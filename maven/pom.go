@@ -2,7 +2,6 @@ package maven
 
 import (
 	"encoding/xml"
-	"fmt"
 	"regexp"
 	"strings"
 )
@@ -66,7 +65,7 @@ func (p *POM) Expand(value string) string {
 		})
 		tries--
 		if tries == 0 {
-			fmt.Printf("failed to expand %s\n", value)
+			//fmt.Printf("failed to expand %s\n", value)
 			break
 		}
 	}
