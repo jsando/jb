@@ -32,9 +32,10 @@ type DependencyManagement struct {
 type Dependency struct {
 	GroupID    string `xml:"groupId"`
 	ArtifactID string `xml:"artifactId"`
-	Version    string `xml:"version"`
-	Type       string `xml:"type"`
-	Scope      string `xml:"scope"`
+	Version    string `xml:"version,omitempty"`
+	Type       string `xml:"type,omitempty"`
+	Scope      string `xml:"scope,omitempty"`
+	Optional   string `xml:"optional,omitempty"`
 }
 
 type Properties struct {

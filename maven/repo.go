@@ -385,6 +385,6 @@ func fetchFromRemote(mavenBaseURL string, groupID, artifactID, version, file str
 	if err != nil {
 		return fmt.Errorf("error saving %s: %v", fileURL, err)
 	}
-	fmt.Printf("Successfully downloaded %s\n", fileURL)
+	//fmt.Printf("Successfully downloaded %s\n", fileURL)
 	return nil
 }

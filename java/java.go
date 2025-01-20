@@ -155,14 +155,25 @@ func (j *Builder) Build(module *project.Module) {
 			return
 		}
 		dst := filepath.Join(buildClasses, relPath)
-		err = os.MkdirAll(filepath.Dir(dst), os.ModePerm)
-		if j.logger.CheckError(fmt.Sprintf("creating directory %s", filepath.Dir(dst)), err) {
+		finfo, err := os.Stat(embed.Path)
+		if j.logger.CheckError("stat embed", err) {
 			return
 		}
+		if finfo.IsDir() {
+			err = os.MkdirAll(dst, os.ModePerm)
+			if j.logger.CheckError("mkdir for embed", err) {
+				return
+			}
+		} else {
+			err = os.MkdirAll(filepath.Dir(dst), os.ModePerm)
+			if j.logger.CheckError(fmt.Sprintf("creating directory %s", filepath.Dir(dst)), err) {
+				return
+			}
 
-		err = util.CopyFile(embed.Path, dst)
-		if j.logger.CheckError(fmt.Sprintf("copying embed %s to %s", embed.Path, dst), err) {
-			return
+			err = util.CopyFile(embed.Path, dst)
+			if j.logger.CheckError(fmt.Sprintf("copying embed %s to %s", embed.Path, dst), err) {
+				return
+			}
 		}
 	}
 
@@ -262,7 +273,7 @@ func execCommand(name string, dir string, args ...string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Dir = dir
-	//fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
+	fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
 	return cmd.Run()
 }
 
@@ -282,14 +293,24 @@ func (j *Builder) writePOM(module *project.Module, deps []*project.Module) error
 	jarPath := j.getModuleJarPath(module)
 	pomPath := strings.TrimSuffix(jarPath, ".jar") + ".pom"
 
+	pom.Dependencies = make([]maven.Dependency, len(deps))
 	if len(deps) > 0 {
-		pom.Dependencies = make([]maven.Dependency, len(deps))
 		for i, dep := range deps {
 			pom.Dependencies[i] = maven.Dependency{
 				GroupID:    dep.Group,
 				ArtifactID: dep.Name,
 				Version:    dep.Version,
 			}
+		}
+	}
+	if module.Dependencies != nil {
+		for _, dep := range module.Dependencies {
+			mavenDep := maven.Dependency{
+				GroupID:    dep.Group,
+				ArtifactID: module.Name,
+				Version:    dep.Version,
+			}
+			pom.Dependencies = append(pom.Dependencies, mavenDep)
 		}
 	}
 	pomXML, err := xml.MarshalIndent(pom, "", "  ")
@@ -315,7 +336,7 @@ func (j *Builder) buildJar(module *project.Module,
 	jarPath := j.getModuleJarPath(module)
 	jarArgs := []string{
 		// Java 1.8 only had the short form args, later versions allow "--create", "--file"
-		"-c", "-f", jarPath,
+		"-cf", jarPath,
 	}
 	if jarDate != "" {
 		jarArgs = append(jarArgs, "--date", jarDate)
@@ -375,11 +396,12 @@ func (d PackageDependency) PrintTree(index int) {
 }
 
 func (j *Builder) ResolveDependencies(module *project.Module) error {
+	visited := make(map[string]string)
 	for _, ref := range module.Dependencies {
 		if ref == nil {
 			panic("how can ref be nil?")
 		}
-		err := j.resolveDependency(ref)
+		err := j.resolveDependency(ref, visited)
 		if err != nil {
 			return err
 		}
@@ -387,11 +409,19 @@ func (j *Builder) ResolveDependencies(module *project.Module) error {
 	return nil
 }
 
-func (j *Builder) resolveDependency(dep *project.Dependency) error {
+func (j *Builder) resolveDependency(dep *project.Dependency, visited map[string]string) error {
 	// already done?
 	if dep.Path != "" {
 		return nil
 	}
+	key := fmt.Sprintf("%s:%s", dep.Group, dep.Artifact)
+	if _, exists := visited[key]; exists {
+		// circular, duplicate, or conflicting reference
+		return nil
+	}
+	visited[key] = dep.Version
+	//fmt.Printf("visited: %s\n", key)
+
 	//fmt.Printf("resolving %s:%s:%s\n", dep.Group, dep.Artifact, dep.Version)
 	pom, err := j.repo.GetPOM(dep.Group, dep.Artifact, dep.Version)
 	if err != nil {
@@ -404,6 +434,8 @@ func (j *Builder) resolveDependency(dep *project.Dependency) error {
 			return err
 		}
 		dep.Path = jarPath
+	case "pom":
+		// process the POM but there is no jar
 	default:
 		return fmt.Errorf("packaging type not supported: %s", pom.Packaging)
 	}
@@ -411,7 +443,7 @@ func (j *Builder) resolveDependency(dep *project.Dependency) error {
 		dep.Transitive = make([]*project.Dependency, 0)
 	}
 	for _, pomChild := range pom.Dependencies {
-		if pomChild.Scope == "test" || pomChild.Scope == "provided" {
+		if pomChild.Scope == "test" || pomChild.Scope == "provided" || pomChild.Optional == "true" {
 			continue // Skip test and provided scope dependencies
 		}
 		gav := maven.GAV(pomChild.GroupID, pomChild.ArtifactID, pomChild.Version)
@@ -427,7 +459,7 @@ func (j *Builder) resolveDependency(dep *project.Dependency) error {
 			Path:        "",
 			Transitive:  make([]*project.Dependency, 0),
 		}
-		err := j.resolveDependency(child)
+		err := j.resolveDependency(child, visited)
 		if err != nil {
 			return err
 		}
@@ -460,7 +492,11 @@ func (j *Builder) getBuildDependencies(module *project.Module) ([]string, error)
 		} else {
 			// Store seen dependency version
 			seenDeps[key] = pkg.Version
-			jars[pkg.Path] = struct{}{}
+
+			// pkg path can be empty if packaging=pom was encountered
+			if len(pkg.Path) > 0 {
+				jars[pkg.Path] = struct{}{}
+			}
 		}
 		// Recursively collect transitive dependencies
 		for _, dep := range pkg.Transitive {
