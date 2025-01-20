@@ -123,18 +123,9 @@ func (l *ModuleLoader) GetModule(modulePath string) (*Module, error) {
 
 	module.Dependencies = make([]*Dependency, len(moduleFile.Dependencies))
 	for i, s := range moduleFile.Dependencies {
-		parts := strings.Split(s, ":")
-		if len(parts) != 3 {
-			return nil, fmt.Errorf("invalid dependency '%s' in module %s", s, module.Name)
-		}
-		dep := &Dependency{
-			Coordinates: s,
-			Group:       parts[0],
-			Artifact:    parts[1],
-			Version:     parts[2],
-		}
-		if dep.Group == "" || dep.Artifact == "" || dep.Version == "" {
-			return nil, fmt.Errorf("invalid dependency '%s' in module %s", s, module.Name)
+		dep, err := ParseCoordinates(s)
+		if err != nil {
+			return nil, err
 		}
 		module.Dependencies[i] = dep
 	}
@@ -157,6 +148,23 @@ func (l *ModuleLoader) GetModule(modulePath string) (*Module, error) {
 	}
 
 	return module, nil
+}
+
+func ParseCoordinates(gav string) (*Dependency, error) {
+	parts := strings.Split(gav, ":")
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("invalid dependency '%s', must be in the form <group>:<artifact>:<version>", gav)
+	}
+	dep := &Dependency{
+		Coordinates: gav,
+		Group:       parts[0],
+		Artifact:    parts[1],
+		Version:     parts[2],
+	}
+	if dep.Group == "" || dep.Artifact == "" || dep.Version == "" {
+		return nil, fmt.Errorf("invalid dependency '%s', must be in the form <group>:<artifact>:<version>", gav)
+	}
+	return dep, nil
 }
 
 // If given a folder, find the module file in it

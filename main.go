@@ -91,8 +91,12 @@ func cleanCommand(args []string) {
 
 func publishCommand(args []string) {
 	fs := flag.NewFlagSet("publish", flag.ExitOnError)
+	var jarFile string
+	var gav string
+	fs.StringVar(&jarFile, "jar", "", "jar file to publish (use with --gav to set maven coordinates)")
+	fs.StringVar(&gav, "gav", "", "maven coordinates for pushing jar into maven repository")
 	fs.Usage = func() {
-		fmt.Println("Usage: jb publish [path]")
+		fmt.Println("Usage: jb publish [path] [--jar jarfile --gav \"group:artifact:version\"]")
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
@@ -104,9 +108,20 @@ func publishCommand(args []string) {
 	if len(buildArgs) > 0 && buildArgs[0] != "--" {
 		path = buildArgs[0]
 	}
-	err := builder.BuildAndPublishModule(path)
-	if err != nil {
-		pterm.Fatal.Printf("BUILD FAILED: %s\n", err)
+	if jarFile == "" && gav == "" {
+		err := builder.BuildAndPublishModule(path)
+		if err != nil {
+			pterm.Fatal.Printf("BUILD FAILED: %s\n", err)
+		}
+	} else {
+		if jarFile == "" || gav == "" {
+			fmt.Println("jar and gav must be specified together")
+			os.Exit(1)
+		}
+		err := builder.PublishRawJAR(jarFile, gav)
+		if err != nil {
+			pterm.Fatal.Printf("BUILD FAILED: %s\n", err)
+		}
 	}
 }
 

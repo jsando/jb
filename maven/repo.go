@@ -296,8 +296,8 @@ func (c *LocalRepository) getFile(groupID, artifactID, version, file string) (st
 }
 
 func (c *LocalRepository) InstallPackage(groupID, artifactID, version, jarPath, pomPath string) error {
-	pomFileName := filepath.Base(pomPath)
-	jarFileName := filepath.Base(jarPath)
+	pomFileName := fmt.Sprintf("%s-%s.pom", artifactID, version)
+	jarFileName := fmt.Sprintf("%s-%s.jar", artifactID, version)
 	artifactDir := c.artifactDir(groupID, artifactID, version)
 	preRelease := strings.Contains(version, "-")
 

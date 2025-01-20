@@ -273,7 +273,7 @@ func execCommand(name string, dir string, args ...string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Dir = dir
-	fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
+	//fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
 	return cmd.Run()
 }
 
