@@ -7,50 +7,66 @@ import (
 	"github.com/jsando/jb/maven"
 	"github.com/jsando/jb/project"
 	"github.com/jsando/jb/util"
-	"path/filepath"
 	"strings"
 )
 
 type moduleBuilder struct {
-	loader  *project.ModuleLoader
-	builder *java.Builder
-	module  *project.Module
-	logger  project.BuildLog
+	loader       *project.ModuleLoader
+	builder      *java.Builder
+	project      *project.Project
+	buildModules []*project.Module
+	logger       project.BuildLog
 }
 
 func newModuleBuilder(path string, logger project.BuildLog) (*moduleBuilder, error) {
 	builder := &moduleBuilder{
-		loader:  project.NewModuleLoader(),
-		builder: java.NewBuilder(logger),
-		logger:  logger,
+		loader:       project.NewModuleLoader(),
+		builder:      java.NewBuilder(logger),
+		logger:       logger,
+		buildModules: make([]*project.Module, 0),
 	}
+
 	// Load the module and recursively load its referenced modules
-	path, err := filepath.Abs(path)
-	module, err := builder.loader.GetModule(path)
+	project, module, err := builder.loader.LoadProject(path)
 	if err != nil {
-		return nil, fmt.Errorf("error loading module '%s': %w", path, err)
+		return nil, fmt.Errorf("error loading '%s': %w", path, err)
 	}
-	builder.module = module
+	builder.project = project
+	if module != nil {
+		builder.buildModules = append(builder.buildModules, module)
+	} else {
+		builder.buildModules = append(builder.buildModules, project.Modules...)
+	}
+	if len(builder.buildModules) == 0 {
+		return nil, fmt.Errorf("no modules found in '%s'", path)
+	}
+	for _, module := range builder.buildModules {
+		if module == nil {
+			panic("someone added a nil module to the build list")
+		}
+	}
 	return builder, nil
 }
 
 func (b *moduleBuilder) Build() {
-	references, err := b.module.GetModuleReferencesInBuildOrder()
-	if b.logger.CheckError("Resolving module references", err) {
-		return
-	}
-	// build referenced modules first
-	for _, ref := range references {
-		b.builder.Build(ref)
-
-		// abort if errors
-		if b.logger.Failed() {
+	for _, module := range b.buildModules {
+		references, err := module.GetModuleReferencesInBuildOrder()
+		if b.logger.CheckError("Resolving module references", err) {
 			return
 		}
-	}
+		// build referenced modules first
+		for _, ref := range references {
+			b.builder.Build(ref)
 
-	// build the target module
-	b.builder.Build(b.module)
+			// abort if errors
+			if b.logger.Failed() {
+				return
+			}
+		}
+
+		// build the target module
+		b.builder.Build(module)
+	}
 }
 
 func BuildModule(path string) error {
@@ -72,7 +88,10 @@ func BuildAndRunModule(path string, args []string) error {
 	}
 	builder.Build()
 	logger.BuildFinish()
-	return builder.builder.Run(builder.module, args)
+	if len(builder.buildModules) != 1 {
+		return fmt.Errorf("expected exactly one module to build and run got %d", len(builder.buildModules))
+	}
+	return builder.builder.Run(builder.buildModules[0], args)
 }
 
 func BuildAndPublishModule(path string) error {
@@ -83,7 +102,12 @@ func BuildAndPublishModule(path string) error {
 	}
 	builder.Build()
 	logger.BuildFinish()
-	return builder.builder.Publish(builder.module, "", "", "")
+	for _, module := range builder.buildModules {
+		if err := builder.builder.Publish(module, "", "", ""); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func Clean(path string) error {
@@ -92,7 +116,9 @@ func Clean(path string) error {
 	if err != nil {
 		return err
 	}
-	builder.builder.Clean(builder.module)
+	for _, module := range builder.buildModules {
+		builder.builder.Clean(module)
+	}
 	logger.BuildFinish()
 	return nil
 }

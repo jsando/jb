@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jsando/jb/util"
 	"hash"
 	"io/ioutil"
 	"os"
@@ -12,6 +13,7 @@ import (
 )
 
 const ModuleFilename = "jb-module.json"
+const ProjectFilename = "jb-project.json"
 const DefaultGroupID = "com.example"
 const DefaultVersion = "1.0.0-snapshot"
 
@@ -24,6 +26,11 @@ type ModuleFileJSON struct {
 	Embeds       []string `json:"embeds,omitempty"`
 	References   []string `json:"references,omitempty"`
 	Dependencies []string `json:"dependencies,omitempty"`
+}
+
+type ProjectFileJSON struct {
+	Name    string   `json:"name"`
+	Modules []string `json:"modules"`
 }
 
 type BuildLog interface {
@@ -65,6 +72,12 @@ type Dependency struct {
 	Transitive  []*Dependency // nil unless resolved
 }
 
+type Project struct {
+	ProjectDirAbs string
+	Name          string
+	Modules       []*Module
+}
+
 type ModuleLoader struct {
 	modules map[string]*Module
 }
@@ -73,6 +86,133 @@ func NewModuleLoader() *ModuleLoader {
 	return &ModuleLoader{
 		modules: make(map[string]*Module),
 	}
+}
+
+// LoadProject loads the given path and returns the Project and optionally the specific
+// module.  The path can be to a module or project file or to a directory containing
+// either of them.
+// If a module is found but no project, a fake one is returned to wrap the module.
+func (l *ModuleLoader) LoadProject(path string) (*Project, *Module, error) {
+	var err error
+	var project *Project
+	var module *Module
+
+	path, err = filepath.Abs(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	projectSearchDir := ""
+	pathInfo, err := os.Stat(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if pathInfo.IsDir() {
+		if util.FileExists(filepath.Join(path, ProjectFilename)) {
+			project, err = l.internalLoadProject(filepath.Join(path, ProjectFilename))
+			if err != nil {
+				return nil, nil, err
+			}
+			projectSearchDir = path
+		} else if util.FileExists(filepath.Join(path, ModuleFilename)) {
+			module, err = l.GetModule(filepath.Join(path, ModuleFilename))
+			if err != nil {
+				return nil, nil, err
+			}
+			projectSearchDir = filepath.Dir(path)
+		} else {
+			return nil, nil, fmt.Errorf("path '%s' is a directory but does not contain a project or module file", path)
+		}
+	} else {
+		filename := filepath.Base(path)
+		if filename == ProjectFilename {
+			project, err = l.internalLoadProject(path)
+			if err != nil {
+				return nil, nil, err
+			}
+		} else if filename == ModuleFilename {
+			module, err = l.GetModule(path)
+			if err != nil {
+				return nil, nil, err
+			}
+			projectSearchDir = filepath.Dir(path)
+		} else {
+			return nil, nil, fmt.Errorf("path '%s' is not a project or module file", path)
+		}
+	}
+
+	// If we loaded a module, project is still nil and we need to search parent folders for it
+	if project == nil {
+		for {
+			projectPath := filepath.Join(projectSearchDir, ProjectFilename)
+			if util.FileExists(projectPath) {
+				project, err = l.internalLoadProject(projectPath)
+				break
+			}
+			parentDir := filepath.Dir(projectSearchDir)
+			if parentDir == projectSearchDir {
+				break
+			}
+			projectSearchDir = parentDir
+		}
+	}
+
+	// If loaded a module AND a project, make sure the module really "belongs" to this project
+	if module != nil && project != nil {
+		found := false
+		for _, m := range project.Modules {
+			if m == module {
+				found = true
+				break
+			}
+		}
+		if !found {
+			fmt.Printf("WARNING module '%s' does not belong to project '%s'", module.Name, project.Name)
+			project = nil
+		}
+	}
+
+	// If its still nil this must be a standalone module, create a Project to contain it
+	if project == nil {
+		project = &Project{
+			ProjectDirAbs: path,
+			Name:          filepath.Base(path),
+			Modules:       []*Module{module},
+		}
+	}
+
+	return project, module, nil
+}
+
+func (l *ModuleLoader) internalLoadProject(projectPath string) (*Project, error) {
+	var err error
+	projectPath, err = filepath.Abs(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	data, err := readFile(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	var projectJSON = &ProjectFileJSON{}
+	err = json.Unmarshal(data, projectJSON)
+	if err != nil {
+		return nil, err
+	}
+	project := &Project{
+		ProjectDirAbs: filepath.Dir(projectPath),
+		Name:          projectJSON.Name,
+		Modules:       make([]*Module, 0),
+	}
+	for _, modulePath := range projectJSON.Modules {
+		modulePath := filepath.Join(project.ProjectDirAbs, modulePath)
+		module, err := l.GetModule(modulePath)
+		if err != nil {
+			return nil, err
+		}
+		project.Modules = append(project.Modules, module)
+	}
+
+	return project, nil
 }
 
 func (l *ModuleLoader) GetModule(modulePath string) (*Module, error) {

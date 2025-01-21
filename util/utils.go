@@ -104,3 +104,12 @@ func CopyFile(src, dst string) error {
 	_, err = io.Copy(destinationFile, sourceFile)
 	return err
 }
+
+func FileExists(filename string) bool {
+	info, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		return false
+	}
+	b := !info.IsDir()
+	return b
+}
