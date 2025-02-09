@@ -36,10 +36,16 @@ func FindFilesBySuffixR(dir, suffix string) ([]SourceFileInfo, error) {
 	return sources, err
 }
 
-func FindFilesByGlob(dir string, includes []string) ([]SourceFileInfo, error) {
-	var sources []SourceFileInfo
-	for _, embed := range includes {
-		srcPattern := filepath.Join(dir, embed)
+type FoundFileInfo struct {
+	Dir  string      // directory that was searched to find Path
+	Path string      // absolute path ... convert to relative using Dir
+	Info os.FileInfo //
+}
+
+func FindFilesByGlob(dir string, includes []string) ([]FoundFileInfo, error) {
+	var sources []FoundFileInfo
+	for _, include := range includes {
+		srcPattern := filepath.Join(dir, include)
 		matchingFiles, err := filepath.Glob(srcPattern)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse pattern %s: %w", srcPattern, err)
@@ -56,7 +62,7 @@ func FindFilesByGlob(dir string, includes []string) ([]SourceFileInfo, error) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to stat file %s: %w", absPath, err)
 			}
-			sources = append(sources, SourceFileInfo{Info: info, Path: absPath})
+			sources = append(sources, FoundFileInfo{Info: info, Dir: dir, Path: absPath})
 		}
 	}
 	return sources, nil

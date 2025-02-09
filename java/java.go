@@ -67,7 +67,7 @@ func (j *Builder) Build(module *project.Module) {
 	jarDate := ""
 
 	// Gather java source files
-	sources, err := util.FindFilesBySuffixR(module.ModuleDirAbs, ".java")
+	sources, err := util.FindFilesBySuffixR(module.SourceDirAbs, ".java")
 	if j.logger.CheckError("finding java sources", err) {
 		return
 	}
@@ -78,8 +78,16 @@ func (j *Builder) Build(module *project.Module) {
 		fmt.Printf("warning: no java sources found in %s\n", module.ModuleDirAbs)
 	}
 
+	// Find source files in the source dir but make the path relative to the module dir
+	for i, source := range sources {
+		sources[i].Path, err = filepath.Rel(module.ModuleDirAbs, filepath.Join(module.SourceDirAbs, source.Path))
+		if j.logger.CheckError("getting relative path for source", err) {
+			return
+		}
+	}
+
 	// Gather embeds
-	embedFiles, err := util.FindFilesByGlob(module.ModuleDirAbs, module.Embeds)
+	embedFiles, err := util.FindFilesByGlob(module.ResourceDirAbs, module.Resources)
 	if j.logger.CheckError("finding embeds", err) {
 		return
 	}
@@ -150,16 +158,12 @@ func (j *Builder) Build(module *project.Module) {
 	// Copy embeds to output folder then jar can just jar everything
 	task := j.logger.TaskStart("building jar")
 	for _, embed := range embedFiles {
-		relPath, err := filepath.Rel(module.ModuleDirAbs, embed.Path)
+		relPath, err := filepath.Rel(embed.Dir, embed.Path)
 		if j.logger.CheckError("getting relative path for embed", err) {
 			return
 		}
 		dst := filepath.Join(buildClasses, relPath)
-		finfo, err := os.Stat(embed.Path)
-		if j.logger.CheckError("stat embed", err) {
-			return
-		}
-		if finfo.IsDir() {
+		if embed.Info.IsDir() {
 			err = os.MkdirAll(dst, os.ModePerm)
 			if j.logger.CheckError("mkdir for embed", err) {
 				return

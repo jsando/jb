@@ -20,12 +20,19 @@ const DefaultVersion = "1.0.0-snapshot"
 type ModuleFileJSON struct {
 	Group        string   `json:"group,omitempty"`
 	Version      string   `json:"version,omitempty"`
+	SourceDir    string   `json:"source_dir,omitempty"`
+	ResourcesDir string   `json:"resources_dir,omitempty"`
 	CompileArgs  []string `json:"javac_args,omitempty"`
 	OutputType   string   `json:"output_type,omitempty"`
 	MainClass    string   `json:"main_class,omitempty"`
-	Embeds       []string `json:"embeds,omitempty"`
+	Resources    []string `json:"resources,omitempty"`
 	References   []string `json:"references,omitempty"`
 	Dependencies []string `json:"dependencies,omitempty"`
+}
+
+type Resource struct {
+	Dir     string `json:"dir,omitempty"`
+	Include string `json:"include,omitempty"`
 }
 
 type ProjectFileJSON struct {
@@ -52,13 +59,15 @@ type TaskLog interface {
 type Module struct {
 	ModuleFileBytes []byte // to compute hash for up-to-date check
 	ModuleDirAbs    string
+	SourceDirAbs    string
+	ResourceDirAbs  string
 	Group           string
 	Name            string
 	Version         string
 	CompileArgs     []string
 	OutputType      string
 	MainClass       string
-	Embeds          []string
+	Resources       []string
 	References      []*Module
 	Dependencies    []*Dependency
 }
@@ -253,13 +262,15 @@ func (l *ModuleLoader) GetModule(modulePath string) (*Module, error) {
 	module = &Module{}
 	module.ModuleFileBytes = data
 	module.ModuleDirAbs = filepath.Dir(modulePath)
+	module.SourceDirAbs = filepath.Join(module.ModuleDirAbs, moduleFile.SourceDir)
+	module.ResourceDirAbs = filepath.Join(module.ModuleDirAbs, moduleFile.ResourcesDir)
 	module.Group = moduleFile.Group
 	module.Name = filepath.Base(module.ModuleDirAbs)
 	module.Version = moduleFile.Version
 	module.CompileArgs = moduleFile.CompileArgs
 	module.OutputType = moduleFile.OutputType
 	module.MainClass = moduleFile.MainClass
-	module.Embeds = moduleFile.Embeds
+	module.Resources = moduleFile.Resources
 
 	module.Dependencies = make([]*Dependency, len(moduleFile.Dependencies))
 	for i, s := range moduleFile.Dependencies {
@@ -345,6 +356,12 @@ func loadModuleFile(data []byte) (*ModuleFileJSON, error) {
 		// todo emit warning
 		m.Group = DefaultGroupID
 	}
+	if m.SourceDir == "" {
+		m.SourceDir = "."
+	}
+	if m.ResourcesDir == "" {
+		m.ResourcesDir = "."
+	}
 	switch m.OutputType {
 	case "jar":
 	case "executable_jar":
@@ -362,8 +379,8 @@ func loadModuleFile(data []byte) (*ModuleFileJSON, error) {
 	if m.CompileArgs == nil {
 		m.CompileArgs = []string{}
 	}
-	if m.Embeds == nil {
-		m.Embeds = []string{}
+	if m.Resources == nil {
+		m.Resources = []string{}
 	}
 	if m.Dependencies == nil {
 		m.Dependencies = []string{}

@@ -28,6 +28,10 @@ func TestJavaBuilder_Build(t *testing.T) {
 			path:          "../tests/simpledeps",
 			expectedError: false,
 		},
+		{
+			path:          "../tests/mvnlayout",
+			expectedError: false,
+		},
 	}
 
 	for _, tt := range tests {

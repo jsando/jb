@@ -1,0 +1,7 @@
+{
+  "source_dir": "src/main/java",
+  "resources_dir": "src/main/resources",
+  "resources": [
+    "*"
+  ]
+}
