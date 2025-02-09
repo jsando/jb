@@ -20,6 +20,7 @@ Commands:
   help     Show command line help.
   publish  Publish a module to the local maven repository or a remote repository.
   run      Build and run an ExecutableJar module.
+  test     Run tests for a module.
 
 Run 'jb [command] --help' for more information on a command.`
 
@@ -45,6 +46,8 @@ func main() {
 		publishCommand(os.Args[2:])
 	case "run":
 		runCommand(os.Args[2:])
+	case "test":
+		testCommand(os.Args[2:])
 	default:
 		fmt.Printf("jb: unknown command %s\n", command)
 		usage(1)
@@ -144,6 +147,27 @@ func runCommand(args []string) {
 	if err != nil {
 		pterm.Fatal.Printf("BUILD FAILED: %s\n", err)
 	}
+}
+
+func testCommand(strings []string) {
+	fs := flag.NewFlagSet("test", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Println("Usage: jb test [path]")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(strings); err != nil {
+		fmt.Printf("error: %s\n", err)
+		os.Exit(1)
+	}
+	runArgs, progArgs := splitArgs(fs.Args())
+	path := "."
+	if len(runArgs) > 0 {
+		path = runArgs[0]
+	}
+	if len(progArgs) > 0 {
+		fmt.Println("jb test does not support running tests with arguments")
+	}
+	builder.BuildAndTestModule(path)
 }
 
 func splitArgs(args []string) ([]string, []string) {

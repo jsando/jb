@@ -166,3 +166,16 @@ func writePOM(jarPath string, dep *project.Dependency) (string, error) {
 	}
 	return pomPath, nil
 }
+
+func BuildAndTestModule(path string) {
+	logger := NewBuildLog()
+	builder, err := newModuleBuilder(path, logger)
+	if logger.CheckError("loading project", err) {
+		return
+	}
+	builder.Build()
+	for _, module := range builder.buildModules {
+		builder.builder.RunTest(module)
+	}
+	logger.BuildFinish()
+}

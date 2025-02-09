@@ -135,7 +135,7 @@ func (j *Builder) Build(module *project.Module) {
 		return
 	}
 	if len(compileClasspath) > 0 {
-		classPath = "--class-path " + strings.Join(compileClasspath, string(os.PathListSeparator))
+		classPath = "-cp " + strings.Join(compileClasspath, string(os.PathListSeparator))
 	}
 
 	// Compile java sources (if there are any)
@@ -273,7 +273,7 @@ func execCommand(name string, dir string, args ...string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Dir = dir
-	//fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
+	fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
 	return cmd.Run()
 }
 
@@ -553,4 +553,61 @@ func (j *Builder) getModulePackage(ref *project.Module) *project.Dependency {
 		Coordinates: maven.GAV(ref.Group, ref.Name, ref.Version),
 		Transitive:  make([]*project.Dependency, 0),
 	}
+}
+
+func (j *Builder) RunTest(module *project.Module) {
+	task := j.logger.TaskStart("Running tests")
+	framework := j.detectTestFramework(module)
+	if framework == "" {
+		task.Error("Test framework not detected (only junit4 and junit5 are currently supported)")
+		return
+	}
+
+	buildDir := filepath.Join(module.ModuleDirAbs, "build")
+	buildTmpDir := filepath.Join(buildDir, "tmp")
+	buildClasses := filepath.Join(buildTmpDir, "classes")
+
+	// Absolute paths to all jar dependencies
+	compileClasspath, err := j.getBuildDependencies(module)
+	if j.logger.CheckError("getting build dependencies", err) {
+		return
+	}
+	compileClasspath = append(compileClasspath, buildClasses)
+	classPath := strings.Join(compileClasspath, string(os.PathListSeparator))
+	//buildArgsPath := filepath.Join(buildTmpDir, "test-classpath.txt")
+	//buildArgs := fmt.Sprintf("-cp %s\n", classPath)
+	//err = util.WriteFile(buildArgsPath, buildArgs)
+	//if j.logger.CheckError("writing build args", err) {
+	//	return
+	//}
+
+	//err = execCommand("java", module.ModuleDirAbs, "@"+buildArgsPath, "org.junit.platform.console.ConsoleLauncher",
+	//	"execute", "--scan-classpath", buildClasses, "--details=tree")
+
+	cmd := exec.Command("java",
+		"org.junit.platform.console.ConsoleLauncher",
+		"execute",
+		"--scan-classpath", buildClasses,
+		"--details=tree")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Dir = module.ModuleDirAbs
+	cmd.Env = append(os.Environ(), "CLASSPATH="+classPath)
+	fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
+	task.Done(cmd.Run())
+}
+
+func (j *Builder) detectTestFramework(module *project.Module) string {
+	for _, dep := range module.Dependencies {
+		if dep.Group == "junit" {
+			return "junit"
+		}
+		if dep.Group == "org.junit.jupiter" {
+			return "junit"
+		}
+		//if dep.Group == "org.testng" {
+		//	return "testng"
+		//}
+	}
+	return ""
 }

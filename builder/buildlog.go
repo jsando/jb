@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/jsando/jb/project"
 	"github.com/pterm/pterm"
+	"os"
 	"time"
 )
 
@@ -57,7 +58,8 @@ func (b *buildLog) BuildFinish() {
 	}
 	msg := fmt.Sprintf("Build %s in %s (%d Warnings, %d Errors)\n", result, totalTime, b.warnCount, b.errorCount)
 	if b.errorCount > 0 {
-		pterm.Fatal.Println(msg)
+		pterm.Error.Println(msg)
+		os.Exit(1)
 	} else {
 		pterm.Success.Println(msg)
 	}
