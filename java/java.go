@@ -566,6 +566,7 @@ func (j *Builder) RunTest(module *project.Module) {
 	buildDir := filepath.Join(module.ModuleDirAbs, "build")
 	buildTmpDir := filepath.Join(buildDir, "tmp")
 	buildClasses := filepath.Join(buildTmpDir, "classes")
+	testResultsDir := filepath.Join(buildTmpDir, "test-results")
 
 	// Absolute paths to all jar dependencies
 	compileClasspath, err := j.getBuildDependencies(module)
@@ -588,12 +589,13 @@ func (j *Builder) RunTest(module *project.Module) {
 		"org.junit.platform.console.ConsoleLauncher",
 		"execute",
 		"--scan-classpath", buildClasses,
-		"--details=tree")
+		"--details=tree",
+		"--reports-dir", testResultsDir)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Dir = module.ModuleDirAbs
 	cmd.Env = append(os.Environ(), "CLASSPATH="+classPath)
-	fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
+	//fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
 	task.Done(cmd.Run())
 }
 
