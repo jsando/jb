@@ -221,8 +221,11 @@ func (j *Builder) compileJava(module *project.Module, task project.TaskLog, buil
 	sourceFilesPathRel, _ := filepath.Rel(module.ModuleDirAbs, sourceFilesPath)
 
 	// Compile sources
+	_ = execCommand("javac", module.ModuleDirAbs, "-version")
+
 	cmd := exec.Command("javac", "@"+optionsPathRel, "@"+sourceFilesPathRel)
 	cmd.Dir = module.ModuleDirAbs
+	fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
 
 	stderr, err := cmd.StderrPipe()
 	if err != nil {

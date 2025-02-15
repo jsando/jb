@@ -179,3 +179,8 @@ func BuildAndTestModule(path string) {
 	}
 	logger.BuildFinish()
 }
+
+// ConvertToJB converts the maven project at the given path to jb.
+func ConvertToJB(path string) {
+
+}

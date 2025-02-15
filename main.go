@@ -17,6 +17,7 @@ Execute a command.
 Commands:
   build    Build a module.
   clean    Clean build outputs.
+  convert  Convert module(s) from another build system to jb.
   help     Show command line help.
   publish  Publish a module to the local maven repository or a remote repository.
   run      Build and run an ExecutableJar module.
@@ -40,6 +41,8 @@ func main() {
 		buildCommand(os.Args[2:])
 	case "clean":
 		cleanCommand(os.Args[2:])
+	case "convert":
+		convertCommand(os.Args[2:])
 	case "help", "-help", "--help":
 		usage(0)
 	case "publish":
@@ -90,6 +93,24 @@ func cleanCommand(args []string) {
 	if err != nil {
 		pterm.Fatal.Printf("BUILD FAILED: %s\n", err)
 	}
+}
+
+func convertCommand(args []string) {
+	fs := flag.NewFlagSet("convert", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Println("Usage: jb convert path")
+		fs.PrintDefaults()
+	}
+	if err := fs.Parse(args); err != nil {
+		fmt.Printf("error: %s\n", err)
+		os.Exit(1)
+	}
+	path := "."
+	buildArgs := fs.Args()
+	if len(buildArgs) > 0 && buildArgs[0] != "--" {
+		path = buildArgs[0]
+	}
+	builder.ConvertToJB(path)
 }
 
 func publishCommand(args []string) {
