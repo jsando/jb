@@ -50,15 +50,23 @@ jobs:
       with:
         go-version: '1.23.x'
     
+    - name: Get version info
+      id: version
+      shell: bash
+      run: |
+        VERSION=${GITHUB_REF#refs/tags/v}
+        COMMIT=$(git rev-parse --short HEAD)
+        DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+        echo "date=$DATE" >> $GITHUB_OUTPUT
+    
     - name: Build binary
       env:
         GOOS: ${{ matrix.goos }}
         GOARCH: ${{ matrix.goarch }}
       run: |
-        VERSION=${GITHUB_REF#refs/tags/v}
-        COMMIT=$(git rev-parse --short HEAD)
-        DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-        go build -v -o ${{ matrix.binary_name }} -ldflags="-s -w -X github.com/jsando/jb/version.Version=$VERSION -X github.com/jsando/jb/version.Commit=$COMMIT -X github.com/jsando/jb/version.Date=$DATE"
+        go build -v -o ${{ matrix.binary_name }} -ldflags="-s -w -X github.com/jsando/jb/version.Version=${{ steps.version.outputs.version }} -X github.com/jsando/jb/version.Commit=${{ steps.version.outputs.commit }} -X github.com/jsando/jb/version.Date=${{ steps.version.outputs.date }}"
     
     - name: Upload to release
       uses: svenstaro/upload-release-action@v2
