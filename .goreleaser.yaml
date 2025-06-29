@@ -1,0 +1,72 @@
+# GoReleaser configuration
+version: 2
+
+project_name: jb
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: jb
+    binary: jb
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    # Skip unsupported combinations
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/jsando/jb/version.Version={{.Version}}
+      - -X github.com/jsando/jb/version.Commit={{.ShortCommit}}
+      - -X github.com/jsando/jb/version.Date={{.Date}}
+
+archives:
+  - id: jb
+    name_template: >-
+      {{- .ProjectName }}-
+      {{- .Os }}-
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    # Use zip for Windows, tar.gz for others
+    files:
+      - none*
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - 'merge conflict'
+      - Merge pull request
+      - Merge remote-tracking branch
+      - Merge branch
+
+release:
+  github:
+    owner: jsando
+    name: jb
+  
+  name_template: "v{{.Version}}"
+  
+  # If set to true, will not auto-publish the release
+  draft: false
+  
+  # If set to auto, will mark the release as not ready for production
+  # in case there is an indicator for this in the tag e.g. v1.0.0-rc1
+  prerelease: auto
