@@ -17,6 +17,10 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         java: ['8', '11', '17', '21']
         go: ['1.23.x']
+        exclude:
+          # Java 8 is not available on macOS runners with temurin
+          - os: macos-latest
+            java: '8'
         include:
           # Add explicit names for better job descriptions
           - os: ubuntu-latest
