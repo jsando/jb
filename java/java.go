@@ -150,7 +150,7 @@ func (j *Builder) Build(module *project.Module) {
 		return
 	}
 	if len(compileClasspath) > 0 {
-		classPath = "-cp " + strings.Join(compileClasspath, string(os.PathListSeparator))
+		classPath = strings.Join(compileClasspath, string(os.PathListSeparator))
 	}
 
 	// Compile java sources (if there are any)
