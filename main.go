@@ -4,12 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"github.com/jsando/jb/builder"
+	"github.com/jsando/jb/version"
 	"github.com/pterm/pterm"
 	"os"
 	"slices"
 )
 
-const USAGE = `jb (1.0.0) - The Easier Java Build Tool'
+const USAGE = `jb - The Easier Java Build Tool
 Usage: jb [command] [command-options] [arguments]
 
 Execute a command.
@@ -22,12 +23,20 @@ Commands:
   publish  Publish a module to the local maven repository or a remote repository.
   run      Build and run an ExecutableJar module.
   test     Run tests for a module.
+  version  Show version information.
 
 Run 'jb [command] --help' for more information on a command.`
 
 func usage(exitCode int) {
 	fmt.Println(USAGE)
 	os.Exit(exitCode)
+}
+
+func versionCommand() {
+	fmt.Printf("jb version %s\n", version.Version)
+	fmt.Printf(" commit: %s\n", version.Commit)
+	fmt.Printf(" built: %s\n", version.Date)
+	os.Exit(0)
 }
 
 func main() {
@@ -51,6 +60,8 @@ func main() {
 		runCommand(os.Args[2:])
 	case "test":
 		testCommand(os.Args[2:])
+	case "version", "-v", "--version":
+		versionCommand()
 	default:
 		fmt.Printf("jb: unknown command %s\n", command)
 		usage(1)

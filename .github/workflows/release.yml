@@ -55,7 +55,10 @@ jobs:
         GOOS: ${{ matrix.goos }}
         GOARCH: ${{ matrix.goarch }}
       run: |
-        go build -v -o ${{ matrix.binary_name }} -ldflags="-s -w"
+        VERSION=${GITHUB_REF#refs/tags/v}
+        COMMIT=$(git rev-parse --short HEAD)
+        DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        go build -v -o ${{ matrix.binary_name }} -ldflags="-s -w -X github.com/jsando/jb/version.Version=$VERSION -X github.com/jsando/jb/version.Commit=$COMMIT -X github.com/jsando/jb/version.Date=$DATE"
     
     - name: Upload to release
       uses: svenstaro/upload-release-action@v2
