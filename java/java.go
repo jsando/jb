@@ -1,7 +1,6 @@
 package java
 
 import (
-	"bufio"
 	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
@@ -9,11 +8,10 @@ import (
 	"fmt"
 	"github.com/jsando/jb/maven"
 	"github.com/jsando/jb/project"
+	"github.com/jsando/jb/tools"
 	"github.com/jsando/jb/util"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
@@ -22,14 +20,25 @@ const (
 )
 
 type Builder struct {
-	repo   *maven.LocalRepository
-	logger project.BuildLog
+	repo         *maven.LocalRepository
+	logger       project.BuildLog
+	toolProvider tools.ToolProvider
 }
 
 func NewBuilder(logger project.BuildLog) *Builder {
 	return &Builder{
-		repo:   maven.OpenLocalRepository(),
-		logger: logger,
+		repo:         maven.OpenLocalRepository(),
+		logger:       logger,
+		toolProvider: tools.GetDefaultToolProvider(),
+	}
+}
+
+// NewBuilderWithTools creates a new Builder with a custom tool provider
+func NewBuilderWithTools(logger project.BuildLog, toolProvider tools.ToolProvider) *Builder {
+	return &Builder{
+		repo:         maven.OpenLocalRepository(),
+		logger:       logger,
+		toolProvider: toolProvider,
 	}
 }
 
@@ -42,17 +51,15 @@ func (j *Builder) Clean(module *project.Module) {
 
 func (j *Builder) Run(module *project.Module, progArgs []string) error {
 	jarPath := j.getModuleJarPath(module)
-	args := []string{"-jar", jarPath}
-	args = append(args, progArgs...)
-	cmd := exec.Command("java", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	//fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
-	err := cmd.Run()
-	if err != nil {
-		return err
+	
+	runner := j.toolProvider.GetRunner()
+	runArgs := tools.RunArgs{
+		JarFile:     jarPath,
+		ProgramArgs: progArgs,
+		WorkDir:     module.ModuleDirAbs,
 	}
-	return nil
+	
+	return runner.Run(runArgs)
 }
 
 func (j *Builder) getModuleJarPath(module *project.Module) string {
@@ -199,90 +206,76 @@ func (j *Builder) Build(module *project.Module) {
 }
 
 func (j *Builder) compileJava(module *project.Module, task project.TaskLog, buildTmpDir, buildClasses, classPath string, extraFlags []string, sourceFiles []util.SourceFileInfo) error {
-	// Write javac args to a single file, avoid potential shell args length limitation (esp with large classpath)
-	buildArgsPath := filepath.Join(buildTmpDir, "javac-flags.txt")
-	buildArgs := fmt.Sprintf("-d %s\n%s\n%s\n", buildClasses, strings.Join(extraFlags, "\n"), classPath)
-	if err := util.WriteFile(buildArgsPath, buildArgs); err != nil {
-		return err
+	compiler := j.toolProvider.GetCompiler()
+	
+	// Check if compiler is available
+	if !compiler.IsAvailable() {
+		return fmt.Errorf("Java compiler (javac) not found. Please ensure JDK is installed and javac is in your PATH")
 	}
-
-	// Write all source file paths to a file for javac, avoids potential shell args length limitation
-	sourceFilesPath := filepath.Join(buildTmpDir, "javac-sources.txt")
-	sourceFileList := ""
-	for _, sourceFile := range sourceFiles {
-		sourceFileList += sourceFile.Path + "\n"
+	
+	// Log compiler version
+	if version, err := compiler.Version(); err == nil {
+		task.Info(fmt.Sprintf("Using Java compiler version: %s", version.String()))
 	}
-	if err := util.WriteFile(sourceFilesPath, sourceFileList); err != nil {
-		return err
+	
+	// Convert source files to string paths
+	sourcePaths := make([]string, len(sourceFiles))
+	for i, sf := range sourceFiles {
+		sourcePaths[i] = sf.Path
 	}
-
-	// Convert paths to relative to the module dir (todo: why?)
-	optionsPathRel, _ := filepath.Rel(module.ModuleDirAbs, buildArgsPath)
-	sourceFilesPathRel, _ := filepath.Rel(module.ModuleDirAbs, sourceFilesPath)
-
-	// Compile sources
-	_ = execCommand("javac", module.ModuleDirAbs, "-version")
-
-	cmd := exec.Command("javac", "@"+optionsPathRel, "@"+sourceFilesPathRel)
-	cmd.Dir = module.ModuleDirAbs
-	fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return err
+	
+	// Prepare compilation arguments
+	compileArgs := tools.CompileArgs{
+		SourceFiles: sourcePaths,
+		ClassPath:   classPath,
+		DestDir:     buildClasses,
+		ExtraFlags:  extraFlags,
+		WorkDir:     module.ModuleDirAbs,
 	}
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
+	
+	// Compile
+	result, err := compiler.Compile(compileArgs)
+	
+	// Process compilation result
+	if result.WarningCount > 0 {
+		task.Warn(fmt.Sprintf("Compilation completed with %d warning(s)", result.WarningCount))
 	}
-
-	// Start the javac process
-	if err := cmd.Start(); err != nil {
-		return err
+	
+	// Log warnings
+	for _, warning := range result.Warnings {
+		if warning.File != "" {
+			task.Warn(fmt.Sprintf("%s:%d:%d: %s", warning.File, warning.Line, warning.Column, warning.Message))
+		} else {
+			task.Warn(warning.Message)
+		}
 	}
-
-	// Initialize counters
-	warningCount, errorCount := 0, 0
-
-	// Regex patterns for warnings and errors
-	warningPattern := regexp.MustCompile(`(?i)warning`)
-	errorPattern := regexp.MustCompile(`(?i)error`)
-
-	// Read and process output streams
-	processStream := func(scanner *bufio.Scanner) {
-		for scanner.Scan() {
-			line := scanner.Text()
-
-			switch {
-			case errorPattern.MatchString(line):
-				errorCount++
+	
+	// Log errors
+	for _, error := range result.Errors {
+		if error.File != "" {
+			task.Error(fmt.Sprintf("%s:%d:%d: %s", error.File, error.Line, error.Column, error.Message))
+		} else {
+			task.Error(error.Message)
+		}
+	}
+	
+	// If we have raw output but no parsed errors/warnings, show the raw output
+	if !result.Success && len(result.Errors) == 0 && result.RawOutput != "" {
+		task.Error("Compilation failed. Raw output:")
+		for _, line := range strings.Split(result.RawOutput, "\n") {
+			if strings.TrimSpace(line) != "" {
 				task.Error(line)
-			case warningPattern.MatchString(line):
-				warningCount++
-				task.Warn(line)
-			default:
-				task.Info(line)
 			}
 		}
 	}
-
-	// Scan stderr and stdout
-	go processStream(bufio.NewScanner(stderr))
-	go processStream(bufio.NewScanner(stdout))
-
-	// Wait for javac to finish
-	return cmd.Wait()
+	
+	if !result.Success {
+		return fmt.Errorf("compilation failed with %d error(s)", result.ErrorCount)
+	}
+	
+	return err
 }
 
-func execCommand(name string, dir string, args ...string) error {
-	cmd := exec.Command(name, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Dir = dir
-	fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
-	return cmd.Run()
-}
 
 func (j *Builder) writePOM(module *project.Module, deps []*project.Module) error {
 	pom := maven.POM{
@@ -340,44 +333,40 @@ func (j *Builder) buildJar(module *project.Module,
 	buildTmpDir string,
 	buildClasses string) error {
 
+	jarTool := j.toolProvider.GetJarTool()
+	
+	// Check if jar tool is available
+	if !jarTool.IsAvailable() {
+		return fmt.Errorf("JAR tool not found. Please ensure JDK is installed and jar is in your PATH")
+	}
+	
 	jarPath := j.getModuleJarPath(module)
-	jarArgs := []string{
-		// Java 1.8 only had the short form args, later versions allow "--create", "--file"
-		"-cf", jarPath,
-	}
-	if jarDate != "" {
-		jarArgs = append(jarArgs, "--date", jarDate)
-	}
-	// If executable jar, gather all dependencies and append with relative path to main jar to 'ClassPath' in manifest
-	if mainClass != "" {
-		jarArgs = append(jarArgs, "--main-class", mainClass)
-
-		manifestClasspath := ""
-		firstLine := true
+	
+	// Prepare classpath entries for executable JARs
+	var classPathEntries []string
+	if mainClass != "" && len(jarPaths) > 0 {
+		// Copy dependencies and build classpath entries
 		for _, dep := range jarPaths {
 			jarName := filepath.Base(dep)
-			if !firstLine {
-				manifestClasspath += "\n "
-			}
-			firstLine = false
-			manifestClasspath += jarName + " "
+			classPathEntries = append(classPathEntries, jarName)
 			if err := util.CopyFile(dep, filepath.Join(buildDir, jarName)); err != nil {
 				return err
 			}
 		}
-		if len(manifestClasspath) > 0 {
-			manifestPath := filepath.Join(buildTmpDir, "manifest")
-			manifestString := fmt.Sprintf(`Manifest-Version: 1.0
-Class-Path: %s
-`, manifestClasspath)
-			if err := util.WriteFile(manifestPath, manifestString); err != nil {
-				return err
-			}
-			jarArgs = append(jarArgs, "--manifest", manifestPath)
-		}
 	}
-	jarArgs = append(jarArgs, "-C", buildClasses, ".")
-	return execCommand("jar", module.ModuleDirAbs, jarArgs...)
+	
+	// Create JAR arguments
+	jarArgs := tools.JarArgs{
+		JarFile:   jarPath,
+		BaseDir:   buildClasses,
+		Files:     []string{"."}, // Include all files in the base directory
+		MainClass: mainClass,
+		ClassPath: classPathEntries,
+		Date:      jarDate,
+		WorkDir:   module.ModuleDirAbs,
+	}
+	
+	return jarTool.Create(jarArgs)
 }
 
 func (j *Builder) Publish(m *project.Module, repoURL, user, password string) error {
@@ -592,18 +581,22 @@ func (j *Builder) RunTest(module *project.Module) {
 	//err = execCommand("java", module.ModuleDirAbs, "@"+buildArgsPath, "org.junit.platform.console.ConsoleLauncher",
 	//	"execute", "--scan-classpath", buildClasses, "--details=tree")
 
-	cmd := exec.Command("java",
-		"org.junit.platform.console.ConsoleLauncher",
-		"execute",
-		"--scan-classpath", buildClasses,
-		"--details=tree",
-		"--reports-dir", testResultsDir)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Dir = module.ModuleDirAbs
-	cmd.Env = append(os.Environ(), "CLASSPATH="+classPath)
-	//fmt.Printf("running %s with args %v\n", cmd.Path, cmd.Args)
-	task.Done(cmd.Run())
+	runner := j.toolProvider.GetRunner()
+	
+	runArgs := tools.RunArgs{
+		MainClass: "org.junit.platform.console.ConsoleLauncher",
+		ProgramArgs: []string{
+			"execute",
+			"--scan-classpath", buildClasses,
+			"--details=tree",
+			"--reports-dir", testResultsDir,
+		},
+		WorkDir: module.ModuleDirAbs,
+		Env:     []string{"CLASSPATH=" + classPath},
+	}
+	
+	err = runner.Run(runArgs)
+	task.Done(err)
 }
 
 func (j *Builder) detectTestFramework(module *project.Module) string {
