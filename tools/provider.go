@@ -51,12 +51,12 @@ func (p *DefaultToolProvider) DetectJDK() (*JDKInfo, error) {
 	if p.jdkInfo != nil {
 		return p.jdkInfo, nil
 	}
-	
+
 	info := &JDKInfo{
 		OS:   runtime.GOOS,
 		Arch: runtime.GOARCH,
 	}
-	
+
 	// First, check JAVA_HOME environment variable
 	javaHome := os.Getenv("JAVA_HOME")
 	if javaHome != "" {
@@ -65,40 +65,40 @@ func (p *DefaultToolProvider) DetectJDK() (*JDKInfo, error) {
 		if runtime.GOOS == "windows" {
 			javacPath += ".exe"
 		}
-		
+
 		if _, err := os.Stat(javacPath); err == nil {
 			info.Home = javaHome
 		}
 	}
-	
+
 	// If no valid JAVA_HOME, try to find JDK from javac in PATH
 	if info.Home == "" {
 		javacPath, err := exec.LookPath("javac")
 		if err != nil {
 			return nil, fmt.Errorf("JDK not found: no JAVA_HOME set and javac not in PATH")
 		}
-		
+
 		// Try to determine JAVA_HOME from javac path
 		// javac is typically at $JAVA_HOME/bin/javac
 		binDir := filepath.Dir(javacPath)
 		possibleHome := filepath.Dir(binDir)
-		
+
 		// Verify this looks like a JDK home
 		if isValidJDKHome(possibleHome) {
 			info.Home = possibleHome
 		}
 	}
-	
+
 	// Get version information
 	runner := p.GetRunner()
 	version, err := runner.Version()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get Java version: %w", err)
 	}
-	
+
 	info.Version = version
 	info.Vendor = version.Vendor
-	
+
 	p.jdkInfo = info
 	return info, nil
 }
@@ -111,25 +111,25 @@ func isValidJDKHome(path string) bool {
 		filepath.Join(path, "bin", "java"),
 		filepath.Join(path, "bin", "jar"),
 	}
-	
+
 	if runtime.GOOS == "windows" {
 		for i, p := range requiredPaths {
 			requiredPaths[i] = p + ".exe"
 		}
 	}
-	
+
 	for _, reqPath := range requiredPaths {
 		if _, err := os.Stat(reqPath); err != nil {
 			return false
 		}
 	}
-	
+
 	// Check for lib directory (contains tools.jar in older JDKs or modules in newer ones)
 	libPath := filepath.Join(path, "lib")
 	if _, err := os.Stat(libPath); err != nil {
 		return false
 	}
-	
+
 	return true
 }
 
@@ -191,21 +191,21 @@ func CompareVersions(v1, v2 JavaVersion) int {
 		}
 		return 1
 	}
-	
+
 	if v1.Minor != v2.Minor {
 		if v1.Minor < v2.Minor {
 			return -1
 		}
 		return 1
 	}
-	
+
 	if v1.Patch != v2.Patch {
 		if v1.Patch < v2.Patch {
 			return -1
 		}
 		return 1
 	}
-	
+
 	return 0
 }
 
@@ -239,10 +239,10 @@ func GetJarExecutable() string {
 func NormalizePath(path string) string {
 	// Convert forward slashes to the platform separator
 	path = filepath.FromSlash(path)
-	
+
 	// Clean the path
 	path = filepath.Clean(path)
-	
+
 	return path
 }
 
@@ -252,12 +252,12 @@ func JoinClassPath(paths ...string) string {
 	if runtime.GOOS == "windows" {
 		separator = ";"
 	}
-	
+
 	// Normalize all paths
 	normalizedPaths := make([]string, len(paths))
 	for i, p := range paths {
 		normalizedPaths[i] = NormalizePath(p)
 	}
-	
+
 	return strings.Join(normalizedPaths, separator)
 }

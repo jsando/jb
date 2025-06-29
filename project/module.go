@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/jsando/jb/util"
 	"hash"
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -155,6 +155,9 @@ func (l *ModuleLoader) LoadProject(path string) (*Project, *Module, error) {
 			projectPath := filepath.Join(projectSearchDir, ProjectFilename)
 			if util.FileExists(projectPath) {
 				project, err = l.internalLoadProject(projectPath)
+				if err != nil {
+					return nil, nil, err
+				}
 				break
 			}
 			parentDir := filepath.Dir(projectSearchDir)
@@ -339,7 +342,7 @@ func readFile(path string) ([]byte, error) {
 		return nil, err
 	}
 	defer file.Close()
-	return ioutil.ReadAll(file)
+	return io.ReadAll(file)
 }
 
 func loadModuleFile(data []byte) (*ModuleFileJSON, error) {

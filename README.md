@@ -3,6 +3,9 @@ NOTE: This project is in its infancy, it is functional only for simple projects.
 
 # jb - Your friendly Java Build tool!
 
+[![CI](https://github.com/jsando/jb/actions/workflows/ci.yml/badge.svg)](https://github.com/jsando/jb/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/jsando/jb)](https://goreportcard.com/report/github.com/jsando/jb)
+
 jb ("jay-bee") wants to be the missing "batteries-included" build tool for Java developers.  It is a command line tool that takes the 
 place of maven, gradle, or ant and gives you a much faster and simpler experience.
 

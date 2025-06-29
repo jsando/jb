@@ -1,0 +1,170 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test - ${{ matrix.os }} - Java ${{ matrix.java }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        java: ['8', '11', '17', '21']
+        go: ['1.23.x']
+        exclude:
+          # Java 8 is not available on macOS runners with temurin
+          - os: macos-latest
+            java: '8'
+        include:
+          # Add explicit names for better job descriptions
+          - os: ubuntu-latest
+            os_name: Ubuntu
+          - os: windows-latest
+            os_name: Windows
+          - os: macos-latest
+            os_name: macOS
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Go ${{ matrix.go }}
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go }}
+        cache: true
+    
+    - name: Set up JDK ${{ matrix.java }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ matrix.java }}
+        distribution: 'temurin'
+    
+    - name: Verify Go installation
+      run: go version
+    
+    - name: Verify Java installation
+      run: |
+        java -version
+        javac -version
+    
+    - name: Download Go dependencies
+      run: go mod download
+    
+    - name: Run Go tests
+      run: go test -v ./...
+    
+    - name: Build jb
+      run: go build -v
+    
+    - name: Run jb version
+      run: |
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          ./jb.exe help
+        else
+          ./jb help
+        fi
+      shell: bash
+    
+    # Integration tests - build Java test projects
+    - name: Test - Build simple project with no dependencies
+      run: |
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          ./jb.exe build tests/nodeps
+        else
+          ./jb build tests/nodeps
+        fi
+      shell: bash
+    
+    - name: Test - Build project with dependencies
+      run: |
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          ./jb.exe build tests/simpledeps
+        else
+          ./jb build tests/simpledeps
+        fi
+      shell: bash
+    
+    - name: Test - Build multi-module project
+      run: |
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          ./jb.exe build tests/refs/main
+        else
+          ./jb build tests/refs/main
+        fi
+      shell: bash
+    
+    - name: Test - Build project with Maven layout
+      run: |
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          ./jb.exe build tests/mvnlayout
+        else
+          ./jb build tests/mvnlayout
+        fi
+      shell: bash
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23.x'
+        cache: true
+    
+    - name: Run go fmt
+      run: |
+        if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+          echo "The following files need to be formatted:"
+          gofmt -s -l .
+          exit 1
+        fi
+    
+    - name: Run go vet
+      run: go vet ./...
+    
+    - name: Install staticcheck
+      run: go install honnef.co/go/tools/cmd/staticcheck@latest
+    
+    - name: Run staticcheck
+      run: staticcheck ./...
+
+  coverage:
+    name: Test Coverage
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23.x'
+        cache: true
+    
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+    
+    - name: Run tests with coverage
+      run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.out
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false

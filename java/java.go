@@ -51,14 +51,14 @@ func (j *Builder) Clean(module *project.Module) {
 
 func (j *Builder) Run(module *project.Module, progArgs []string) error {
 	jarPath := j.getModuleJarPath(module)
-	
+
 	runner := j.toolProvider.GetRunner()
 	runArgs := tools.RunArgs{
 		JarFile:     jarPath,
 		ProgramArgs: progArgs,
 		WorkDir:     module.ModuleDirAbs,
 	}
-	
+
 	return runner.Run(runArgs)
 }
 
@@ -150,7 +150,7 @@ func (j *Builder) Build(module *project.Module) {
 		return
 	}
 	if len(compileClasspath) > 0 {
-		classPath = "-cp " + strings.Join(compileClasspath, string(os.PathListSeparator))
+		classPath = strings.Join(compileClasspath, string(os.PathListSeparator))
 	}
 
 	// Compile java sources (if there are any)
@@ -207,23 +207,23 @@ func (j *Builder) Build(module *project.Module) {
 
 func (j *Builder) compileJava(module *project.Module, task project.TaskLog, buildTmpDir, buildClasses, classPath string, extraFlags []string, sourceFiles []util.SourceFileInfo) error {
 	compiler := j.toolProvider.GetCompiler()
-	
+
 	// Check if compiler is available
 	if !compiler.IsAvailable() {
-		return fmt.Errorf("Java compiler (javac) not found. Please ensure JDK is installed and javac is in your PATH")
+		return fmt.Errorf("java compiler (javac) not found - please ensure JDK is installed and javac is in your PATH")
 	}
-	
+
 	// Log compiler version
 	if version, err := compiler.Version(); err == nil {
 		task.Info(fmt.Sprintf("Using Java compiler version: %s", version.String()))
 	}
-	
+
 	// Convert source files to string paths
 	sourcePaths := make([]string, len(sourceFiles))
 	for i, sf := range sourceFiles {
 		sourcePaths[i] = sf.Path
 	}
-	
+
 	// Prepare compilation arguments
 	compileArgs := tools.CompileArgs{
 		SourceFiles: sourcePaths,
@@ -232,15 +232,15 @@ func (j *Builder) compileJava(module *project.Module, task project.TaskLog, buil
 		ExtraFlags:  extraFlags,
 		WorkDir:     module.ModuleDirAbs,
 	}
-	
+
 	// Compile
 	result, err := compiler.Compile(compileArgs)
-	
+
 	// Process compilation result
 	if result.WarningCount > 0 {
 		task.Warn(fmt.Sprintf("Compilation completed with %d warning(s)", result.WarningCount))
 	}
-	
+
 	// Log warnings
 	for _, warning := range result.Warnings {
 		if warning.File != "" {
@@ -249,7 +249,7 @@ func (j *Builder) compileJava(module *project.Module, task project.TaskLog, buil
 			task.Warn(warning.Message)
 		}
 	}
-	
+
 	// Log errors
 	for _, error := range result.Errors {
 		if error.File != "" {
@@ -258,7 +258,7 @@ func (j *Builder) compileJava(module *project.Module, task project.TaskLog, buil
 			task.Error(error.Message)
 		}
 	}
-	
+
 	// If we have raw output but no parsed errors/warnings, show the raw output
 	if !result.Success && len(result.Errors) == 0 && result.RawOutput != "" {
 		task.Error("Compilation failed. Raw output:")
@@ -268,14 +268,13 @@ func (j *Builder) compileJava(module *project.Module, task project.TaskLog, buil
 			}
 		}
 	}
-	
+
 	if !result.Success {
 		return fmt.Errorf("compilation failed with %d error(s)", result.ErrorCount)
 	}
-	
+
 	return err
 }
-
 
 func (j *Builder) writePOM(module *project.Module, deps []*project.Module) error {
 	pom := maven.POM{
@@ -334,14 +333,14 @@ func (j *Builder) buildJar(module *project.Module,
 	buildClasses string) error {
 
 	jarTool := j.toolProvider.GetJarTool()
-	
+
 	// Check if jar tool is available
 	if !jarTool.IsAvailable() {
 		return fmt.Errorf("JAR tool not found. Please ensure JDK is installed and jar is in your PATH")
 	}
-	
+
 	jarPath := j.getModuleJarPath(module)
-	
+
 	// Prepare classpath entries for executable JARs
 	var classPathEntries []string
 	if mainClass != "" && len(jarPaths) > 0 {
@@ -354,7 +353,7 @@ func (j *Builder) buildJar(module *project.Module,
 			}
 		}
 	}
-	
+
 	// Create JAR arguments
 	jarArgs := tools.JarArgs{
 		JarFile:   jarPath,
@@ -365,7 +364,7 @@ func (j *Builder) buildJar(module *project.Module,
 		Date:      jarDate,
 		WorkDir:   module.ModuleDirAbs,
 	}
-	
+
 	return jarTool.Create(jarArgs)
 }
 
@@ -582,7 +581,7 @@ func (j *Builder) RunTest(module *project.Module) {
 	//	"execute", "--scan-classpath", buildClasses, "--details=tree")
 
 	runner := j.toolProvider.GetRunner()
-	
+
 	runArgs := tools.RunArgs{
 		MainClass: "org.junit.platform.console.ConsoleLauncher",
 		ProgramArgs: []string{
@@ -594,7 +593,7 @@ func (j *Builder) RunTest(module *project.Module) {
 		WorkDir: module.ModuleDirAbs,
 		Env:     []string{"CLASSPATH=" + classPath},
 	}
-	
+
 	err = runner.Run(runArgs)
 	task.Done(err)
 }

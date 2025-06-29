@@ -11,10 +11,10 @@ type MockJavaCompiler struct {
 	CompileFunc     func(args CompileArgs) (CompileResult, error)
 	VersionFunc     func() (JavaVersion, error)
 	IsAvailableFunc func() bool
-	
+
 	// Record of calls
-	CompileCalls []CompileArgs
-	VersionCalls int
+	CompileCalls     []CompileArgs
+	VersionCalls     int
 	IsAvailableCalls int
 }
 
@@ -50,12 +50,15 @@ type MockJarTool struct {
 	UpdateFunc      func(jarFile string, files map[string]string) error
 	VersionFunc     func() (JavaVersion, error)
 	IsAvailableFunc func() bool
-	
+
 	// Record of calls
-	CreateCalls      []JarArgs
-	ExtractCalls     []struct{ JarFile, DestDir string }
-	ListCalls        []string
-	UpdateCalls      []struct{ JarFile string; Files map[string]string }
+	CreateCalls  []JarArgs
+	ExtractCalls []struct{ JarFile, DestDir string }
+	ListCalls    []string
+	UpdateCalls  []struct {
+		JarFile string
+		Files   map[string]string
+	}
 	VersionCalls     int
 	IsAvailableCalls int
 }
@@ -85,7 +88,10 @@ func (m *MockJarTool) List(jarFile string) ([]string, error) {
 }
 
 func (m *MockJarTool) Update(jarFile string, files map[string]string) error {
-	m.UpdateCalls = append(m.UpdateCalls, struct{ JarFile string; Files map[string]string }{jarFile, files})
+	m.UpdateCalls = append(m.UpdateCalls, struct {
+		JarFile string
+		Files   map[string]string
+	}{jarFile, files})
 	if m.UpdateFunc != nil {
 		return m.UpdateFunc(jarFile, files)
 	}
@@ -110,11 +116,11 @@ func (m *MockJarTool) IsAvailable() bool {
 
 // MockJavaRunner is a mock implementation of JavaRunner for testing
 type MockJavaRunner struct {
-	RunFunc             func(args RunArgs) error
-	RunWithTimeoutFunc  func(args RunArgs, timeout time.Duration) error
-	VersionFunc         func() (JavaVersion, error)
-	IsAvailableFunc     func() bool
-	
+	RunFunc            func(args RunArgs) error
+	RunWithTimeoutFunc func(args RunArgs, timeout time.Duration) error
+	VersionFunc        func() (JavaVersion, error)
+	IsAvailableFunc    func() bool
+
 	// Record of calls
 	RunCalls            []RunArgs
 	RunWithTimeoutCalls []struct {
@@ -162,11 +168,11 @@ func (m *MockJavaRunner) IsAvailable() bool {
 
 // MockToolProvider is a mock implementation of ToolProvider for testing
 type MockToolProvider struct {
-	Compiler  JavaCompiler
-	JarTool   JarTool
-	Runner    JavaRunner
-	JDKInfo   *JDKInfo
-	JDKError  error
+	Compiler JavaCompiler
+	JarTool  JarTool
+	Runner   JavaRunner
+	JDKInfo  *JDKInfo
+	JDKError error
 }
 
 func (m *MockToolProvider) GetCompiler() JavaCompiler {
