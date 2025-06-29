@@ -27,15 +27,15 @@ func (r *DefaultJavaRunner) Run(args RunArgs) error {
 
 	// Build command arguments
 	cmdArgs := []string{}
-	
+
 	// Add JVM arguments
 	cmdArgs = append(cmdArgs, args.JvmArgs...)
-	
+
 	// Add classpath if specified
 	if args.ClassPath != "" {
 		cmdArgs = append(cmdArgs, "-cp", args.ClassPath)
 	}
-	
+
 	// Add main class or jar file
 	if args.JarFile != "" {
 		cmdArgs = append(cmdArgs, "-jar", args.JarFile)
@@ -44,42 +44,42 @@ func (r *DefaultJavaRunner) Run(args RunArgs) error {
 	} else {
 		return fmt.Errorf("either MainClass or JarFile must be specified")
 	}
-	
+
 	// Add program arguments
 	cmdArgs = append(cmdArgs, args.ProgramArgs...)
-	
+
 	// Create command
 	cmd := exec.Command(r.javaPath, cmdArgs...)
-	
+
 	// Set working directory
 	if args.WorkDir != "" {
 		cmd.Dir = args.WorkDir
 	}
-	
+
 	// Set environment
 	if len(args.Env) > 0 {
 		cmd.Env = append(os.Environ(), args.Env...)
 	}
-	
+
 	// Set I/O
 	if args.Stdin != nil {
 		cmd.Stdin = args.Stdin
 	} else {
 		cmd.Stdin = os.Stdin
 	}
-	
+
 	if args.Stdout != nil {
 		cmd.Stdout = args.Stdout
 	} else {
 		cmd.Stdout = os.Stdout
 	}
-	
+
 	if args.Stderr != nil {
 		cmd.Stderr = args.Stderr
 	} else {
 		cmd.Stderr = os.Stderr
 	}
-	
+
 	// Run the command
 	return cmd.Run()
 }
@@ -96,15 +96,15 @@ func (r *DefaultJavaRunner) RunWithTimeout(args RunArgs, timeout time.Duration) 
 
 	// Build command arguments
 	cmdArgs := []string{}
-	
+
 	// Add JVM arguments
 	cmdArgs = append(cmdArgs, args.JvmArgs...)
-	
+
 	// Add classpath if specified
 	if args.ClassPath != "" {
 		cmdArgs = append(cmdArgs, "-cp", args.ClassPath)
 	}
-	
+
 	// Add main class or jar file
 	if args.JarFile != "" {
 		cmdArgs = append(cmdArgs, "-jar", args.JarFile)
@@ -113,50 +113,50 @@ func (r *DefaultJavaRunner) RunWithTimeout(args RunArgs, timeout time.Duration) 
 	} else {
 		return fmt.Errorf("either MainClass or JarFile must be specified")
 	}
-	
+
 	// Add program arguments
 	cmdArgs = append(cmdArgs, args.ProgramArgs...)
-	
+
 	// Create command with context
 	cmd := exec.CommandContext(ctx, r.javaPath, cmdArgs...)
-	
+
 	// Set working directory
 	if args.WorkDir != "" {
 		cmd.Dir = args.WorkDir
 	}
-	
+
 	// Set environment
 	if len(args.Env) > 0 {
 		cmd.Env = append(os.Environ(), args.Env...)
 	}
-	
+
 	// Set I/O
 	if args.Stdin != nil {
 		cmd.Stdin = args.Stdin
 	} else {
 		cmd.Stdin = os.Stdin
 	}
-	
+
 	if args.Stdout != nil {
 		cmd.Stdout = args.Stdout
 	} else {
 		cmd.Stdout = os.Stdout
 	}
-	
+
 	if args.Stderr != nil {
 		cmd.Stderr = args.Stderr
 	} else {
 		cmd.Stderr = os.Stderr
 	}
-	
+
 	// Run the command
 	err := cmd.Run()
-	
+
 	// Check if the context was cancelled (timeout)
 	if ctx.Err() == context.DeadlineExceeded {
 		return fmt.Errorf("java process timed out after %v", timeout)
 	}
-	
+
 	return err
 }
 
@@ -165,17 +165,17 @@ func (r *DefaultJavaRunner) Version() (JavaVersion, error) {
 	if r.version != nil {
 		return *r.version, nil
 	}
-	
+
 	if !r.IsAvailable() {
 		return JavaVersion{}, fmt.Errorf("java not found")
 	}
-	
+
 	cmd := exec.Command(r.javaPath, "-version")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return JavaVersion{}, fmt.Errorf("failed to get java version: %w", err)
 	}
-	
+
 	version := parseJavaVersion(string(output))
 	r.version = &version
 	return version, nil
@@ -186,13 +186,13 @@ func (r *DefaultJavaRunner) IsAvailable() bool {
 	if r.javaPath != "" {
 		return true
 	}
-	
+
 	// Try to find java
 	path, err := exec.LookPath("java")
 	if err != nil {
 		return false
 	}
-	
+
 	r.javaPath = path
 	return true
 }

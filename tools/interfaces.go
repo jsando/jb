@@ -83,10 +83,10 @@ type RunArgs struct {
 type JavaCompiler interface {
 	// Compile compiles Java source files
 	Compile(args CompileArgs) (CompileResult, error)
-	
+
 	// Version returns the compiler version information
 	Version() (JavaVersion, error)
-	
+
 	// IsAvailable checks if the compiler is available on the system
 	IsAvailable() bool
 }
@@ -95,19 +95,19 @@ type JavaCompiler interface {
 type JarTool interface {
 	// Create creates a new JAR file
 	Create(args JarArgs) error
-	
+
 	// Extract extracts files from a JAR
 	Extract(jarFile, destDir string) error
-	
+
 	// List lists the contents of a JAR file
 	List(jarFile string) ([]string, error)
-	
+
 	// Update adds or updates files in an existing JAR
 	Update(jarFile string, files map[string]string) error
-	
+
 	// Version returns the tool version information
 	Version() (JavaVersion, error)
-	
+
 	// IsAvailable checks if the tool is available on the system
 	IsAvailable() bool
 }
@@ -116,13 +116,13 @@ type JarTool interface {
 type JavaRunner interface {
 	// Run executes a Java program
 	Run(args RunArgs) error
-	
+
 	// RunWithTimeout executes a Java program with a timeout
 	RunWithTimeout(args RunArgs, timeout time.Duration) error
-	
+
 	// Version returns the Java runtime version information
 	Version() (JavaVersion, error)
-	
+
 	// IsAvailable checks if Java runtime is available on the system
 	IsAvailable() bool
 }
@@ -131,22 +131,22 @@ type JavaRunner interface {
 type ToolProvider interface {
 	// GetCompiler returns a JavaCompiler instance
 	GetCompiler() JavaCompiler
-	
+
 	// GetJarTool returns a JarTool instance
 	GetJarTool() JarTool
-	
+
 	// GetRunner returns a JavaRunner instance
 	GetRunner() JavaRunner
-	
+
 	// DetectJDK detects and returns information about the available JDK
 	DetectJDK() (*JDKInfo, error)
 }
 
 // JDKInfo represents information about an installed JDK
 type JDKInfo struct {
-	Version  JavaVersion
-	Home     string // JAVA_HOME path
-	Vendor   string
-	Arch     string // Architecture (x64, aarch64, etc.)
-	OS       string // Operating system
+	Version JavaVersion
+	Home    string // JAVA_HOME path
+	Vendor  string
+	Arch    string // Architecture (x64, aarch64, etc.)
+	OS      string // Operating system
 }
