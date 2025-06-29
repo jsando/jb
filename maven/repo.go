@@ -139,39 +139,6 @@ func (c *LocalRepository) GetPOM(groupID, artifactID, version string) (*POM, err
 	return pom, err
 }
 
-func dump(pom *POM) {
-
-	fmt.Printf("POM Details:\n")
-	fmt.Printf("GroupID: %s\n", pom.GroupID)
-	fmt.Printf("ArtifactID: %s\n", pom.ArtifactID)
-	fmt.Printf("Version: %s\n", pom.Version)
-
-	if pom.Parent != nil {
-		fmt.Printf("Parent: GroupID: %s, ArtifactID: %s, Version: %s\n", pom.Parent.GroupID, pom.Parent.ArtifactID, pom.Parent.Version)
-	}
-
-	if pom.Properties != nil {
-		fmt.Println("Properties:")
-		for _, prop := range pom.Properties.Properties {
-			fmt.Printf("  %s = %s\n", prop.XMLName.Local, prop.Value)
-		}
-	}
-
-	if pom.DependencyManagement != nil && len(pom.DependencyManagement.Dependencies) > 0 {
-		fmt.Println("Dependency Management:")
-		for _, dep := range pom.DependencyManagement.Dependencies {
-			fmt.Printf("  GroupID: %s, ArtifactID: %s, Version: %s\n", dep.GroupID, dep.ArtifactID, dep.Version)
-		}
-	}
-
-	if len(pom.Dependencies) > 0 {
-		fmt.Println("Dependencies:")
-		for _, dep := range pom.Dependencies {
-			fmt.Printf("  GroupID: %s, ArtifactID: %s, Version: %s\n", dep.GroupID, dep.ArtifactID, dep.Version)
-		}
-	}
-}
-
 func (c *LocalRepository) expandParentProperties(pom *POM) error {
 	parent, err := c.GetPOM(pom.Parent.GroupID, pom.Parent.ArtifactID, pom.Parent.Version)
 	if err != nil {
@@ -228,9 +195,7 @@ func mergeParentProperties(child, parent *POM) {
 	oldProps := child.Properties.Properties
 	child.Properties.Properties = make([]Property, 0)
 	if parent.Properties != nil && parent.Properties.Properties != nil {
-		for _, prop := range parent.Properties.Properties {
-			child.Properties.Properties = append(child.Properties.Properties, prop)
-		}
+		child.Properties.Properties = append(child.Properties.Properties, parent.Properties.Properties...)
 	}
 	for _, prop := range oldProps {
 		child.SetProperty(prop.XMLName.Local, prop.Value)
@@ -275,10 +240,10 @@ func (c *LocalRepository) getFile(groupID, artifactID, version, file string) (st
 		return "", err
 	}
 	outFile, err := os.OpenFile(artifactPath, os.O_CREATE|os.O_WRONLY, 0600)
-	defer outFile.Close()
 	if err != nil {
 		return artifactPath, err
 	}
+	defer outFile.Close()
 	for _, remote := range c.remotes {
 		err = fetchFromRemote(remote, groupID, artifactID, version, file, outFile)
 		if err == nil {

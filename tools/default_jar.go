@@ -43,17 +43,22 @@ func (t *DefaultJarTool) Create(args JarArgs) error {
 		}
 	}
 
-	// Add main class if specified
-	if args.MainClass != "" {
-		cmdArgs = append(cmdArgs, "--main-class", args.MainClass)
-	}
+	// Handle manifest - need to create manifest for main class and/or classpath
+	var manifestContent string
+	needManifest := false
 
-	// Handle manifest
 	if args.ManifestFile != "" {
-		cmdArgs = append(cmdArgs, "--manifest", args.ManifestFile)
-	} else if len(args.ClassPath) > 0 {
-		// Create a temporary manifest file with Class-Path
-		manifestContent := "Manifest-Version: 1.0\n"
+		// Use provided manifest file with -m short form
+		cmdArgs = append(cmdArgs, "-m", args.ManifestFile)
+	} else {
+		// Build manifest content if needed
+		manifestContent = "Manifest-Version: 1.0\n"
+
+		if args.MainClass != "" {
+			manifestContent += "Main-Class: " + args.MainClass + "\n"
+			needManifest = true
+		}
+
 		if len(args.ClassPath) > 0 {
 			manifestContent += "Class-Path:"
 			for i, cp := range args.ClassPath {
@@ -65,16 +70,19 @@ func (t *DefaultJarTool) Create(args JarArgs) error {
 				manifestContent += cp
 			}
 			manifestContent += "\n"
+			needManifest = true
 		}
 
-		tmpManifest := filepath.Join(os.TempDir(), fmt.Sprintf("jb-manifest-%d.txt", os.Getpid()))
-		defer os.Remove(tmpManifest)
+		if needManifest {
+			tmpManifest := filepath.Join(os.TempDir(), fmt.Sprintf("jb-manifest-%d.txt", os.Getpid()))
+			defer os.Remove(tmpManifest)
 
-		if err := os.WriteFile(tmpManifest, []byte(manifestContent), 0644); err != nil {
-			return fmt.Errorf("failed to write manifest: %w", err)
+			if err := os.WriteFile(tmpManifest, []byte(manifestContent), 0644); err != nil {
+				return fmt.Errorf("failed to write manifest: %w", err)
+			}
+
+			cmdArgs = append(cmdArgs, "-m", tmpManifest)
 		}
-
-		cmdArgs = append(cmdArgs, "--manifest", tmpManifest)
 	}
 
 	// Add base directory if specified

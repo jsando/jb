@@ -210,7 +210,7 @@ func (j *Builder) compileJava(module *project.Module, task project.TaskLog, buil
 
 	// Check if compiler is available
 	if !compiler.IsAvailable() {
-		return fmt.Errorf("Java compiler (javac) not found. Please ensure JDK is installed and javac is in your PATH")
+		return fmt.Errorf("java compiler (javac) not found - please ensure JDK is installed and javac is in your PATH")
 	}
 
 	// Log compiler version

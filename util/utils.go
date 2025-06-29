@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,7 +80,7 @@ func WriteFile(filePath, content string) error {
 // ReadFileAsString reads the entire content of a file and returns it as a string
 // Returns empty string if file not found
 func ReadFileAsString(filename string) (string, error) {
-	data, err := ioutil.ReadFile(filename)
+	data, err := os.ReadFile(filename)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return "", nil
