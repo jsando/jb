@@ -1,3 +1,6 @@
+
+NOTE: This project is in its infancy, it is functional only for simple projects.  Its been a low-priority side project for years, which I'm now using as a test for evaluating agentic coding (currently, Claude Code).  Please do reach out if you are interesting in contributing or would like to fund development.
+
 # jb - Your friendly Java Build tool!
 
 jb ("jay-bee") wants to be the missing "batteries-included" build tool for Java developers.  It is a command line tool that takes the 
@@ -30,4 +33,3 @@ Things that make jb awesome:
 * It uses Maven for fetching or publishing artifacts so it integrates nicely into the Java ecosystem
 
 In short, jb aims to provide a smooth, modern development experience for Java projects.
-
