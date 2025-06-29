@@ -3,6 +3,7 @@ package builder
 import (
 	"fmt"
 	"github.com/jsando/jb/project"
+	"github.com/jsando/jb/version"
 	"github.com/pterm/pterm"
 	"os"
 	"time"
@@ -47,7 +48,7 @@ func NewBuildLog() *buildLog {
 
 func (b *buildLog) BuildStart() {
 	b.buildStartTime = time.Now()
-	fmt.Println("JB 1.0.0 - Build Started")
+	fmt.Printf("JB %s - Build Started\n", version.Version)
 }
 
 func (b *buildLog) BuildFinish() {
