@@ -29,27 +29,14 @@ func (t *DefaultJarTool) Create(args JarArgs) error {
 	// Build jar command arguments
 	cmdArgs := []string{}
 
-	// Use create flag with file option
-	// Java 8 uses short form: -cf
-	// Newer versions also support long form: --create --file
-	cmdArgs = append(cmdArgs, "-cf", args.JarFile)
-
-	// Add date if specified (for reproducible builds)
-	// This is only available in newer JDK versions
-	if args.Date != "" {
-		version, err := t.Version()
-		if err == nil && version.Major >= 11 {
-			cmdArgs = append(cmdArgs, "--date", args.Date)
-		}
-	}
-
 	// Handle manifest - need to create manifest for main class and/or classpath
+	var manifestFile string
 	var manifestContent string
 	needManifest := false
 
 	if args.ManifestFile != "" {
-		// Use provided manifest file with -m short form
-		cmdArgs = append(cmdArgs, "-m", args.ManifestFile)
+		manifestFile = args.ManifestFile
+		needManifest = true
 	} else {
 		// Build manifest content if needed
 		manifestContent = "Manifest-Version: 1.0\n"
@@ -80,8 +67,25 @@ func (t *DefaultJarTool) Create(args JarArgs) error {
 			if err := os.WriteFile(tmpManifest, []byte(manifestContent), 0644); err != nil {
 				return fmt.Errorf("failed to write manifest: %w", err)
 			}
+			manifestFile = tmpManifest
+		}
+	}
 
-			cmdArgs = append(cmdArgs, "-m", tmpManifest)
+	// Use create flag with file option and optional manifest
+	// Java 8 uses short form: -cf or -cfm
+	// When manifest is present, flags must be combined
+	if needManifest {
+		cmdArgs = append(cmdArgs, "-cfm", args.JarFile, manifestFile)
+	} else {
+		cmdArgs = append(cmdArgs, "-cf", args.JarFile)
+	}
+
+	// Add date if specified (for reproducible builds)
+	// This is only available in newer JDK versions
+	if args.Date != "" {
+		version, err := t.Version()
+		if err == nil && version.Major >= 11 {
+			cmdArgs = append(cmdArgs, "--date", args.Date)
 		}
 	}
 

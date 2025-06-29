@@ -3,10 +3,11 @@ package builder
 import (
 	"archive/zip"
 	"encoding/xml"
-	"github.com/jsando/jb/maven"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/jsando/jb/maven"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -50,6 +51,7 @@ func TestJavaBuilder_Build_WithEmbeds(t *testing.T) {
 	err := BuildModule("../tests/embed/test1")
 	assert.NoError(t, err)
 	jarPath := filepath.Join("..", "tests", "embed", "test1", "build", "test1-1.0.jar")
+
 	verifyJarContents(t, jarPath, []string{
 		"META-INF/",
 		"META-INF/MANIFEST.MF",
