@@ -52,7 +52,7 @@ func pomFile(artifactID, version string) string {
 
 func (jc *LocalRepository) artifactDir(groupID, artifactID, version string) string {
 	groupIDWithSlashes := strings.ReplaceAll(groupID, ".", "/")
-	relPath := filepath.Join(filepath.SplitList(groupIDWithSlashes)...)
+	relPath := filepath.Join(strings.Split(groupIDWithSlashes, "/")...)
 	relPath = filepath.Join(relPath, artifactID, version)
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -335,7 +335,7 @@ func fetchFromRemote(mavenBaseURL string, groupID, artifactID, version, file str
 	if err != nil {
 		return fmt.Errorf("failed to parse maven Coordinates: %w", err)
 	}
-	u.Path = path.Join(u.Path, filepath.Join(filepath.SplitList(groupIDWithSlashes)...), artifactID, version, file)
+	u.Path = path.Join(u.Path, groupIDWithSlashes, artifactID, version, file)
 	fileURL := u.String()
 	fmt.Printf("Fetching %s\n", fileURL)
 	resp, err := http.Get(fileURL)
