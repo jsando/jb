@@ -1,3 +1,4 @@
 .idea
 jb
 **/build
+dist/
