@@ -70,3 +70,26 @@ release:
   # If set to auto, will mark the release as not ready for production
   # in case there is an indicator for this in the tag e.g. v1.0.0-rc1
   prerelease: auto
+
+brews:
+  - repository:
+      owner: jsando
+      name: homebrew-tools
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    
+    name: jb
+    
+    url_template: "https://github.com/jsando/jb/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
+    
+    description: "The Easier Java Build Tool"
+    homepage: "https://github.com/jsando/jb"
+    license: "Apache-2.0"
+    
+    directory: Formula
+    
+    test: |
+      system "#{bin}/jb", "version"
+    
+    install: |
+      bin.install "jb"
