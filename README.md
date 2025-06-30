@@ -36,3 +36,16 @@ Things that make jb awesome:
 * It uses Maven for fetching or publishing artifacts so it integrates nicely into the Java ecosystem
 
 In short, jb aims to provide a smooth, modern development experience for Java projects.
+
+## Installation
+
+### Homebrew (macOS)
+
+```bash
+brew tap jsando/tools
+brew install jb
+```
+
+### Download Binary
+
+Download the latest release from the [releases page](https://github.com/jsando/jb/releases).
