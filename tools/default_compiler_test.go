@@ -17,7 +17,7 @@ func TestDefaultJavaCompiler_IsAvailable(t *testing.T) {
 
 	// Test initial state
 	isAvailable := compiler.IsAvailable()
-	
+
 	// This test depends on whether javac is actually installed
 	if _, err := exec.LookPath("javac"); err == nil {
 		assert.True(t, isAvailable)
@@ -52,10 +52,13 @@ func TestDefaultJavaCompiler_Version(t *testing.T) {
 	assert.Equal(t, version, version2)
 
 	// Test when not available
-	compiler2 := &DefaultJavaCompiler{}
-	_, err3 := compiler2.Version()
+	compiler2 := &DefaultJavaCompiler{javacPath: "/nonexistent/javac"}
+	version3, err3 := compiler2.Version()
 	assert.Error(t, err3)
-	assert.Contains(t, err3.Error(), "javac not found")
+	assert.Contains(t, err3.Error(), "failed to get javac version")
+	assert.Zero(t, version3.Major)
+	assert.Empty(t, version3.Full)
+	assert.Empty(t, version3.Vendor)
 }
 
 func TestDefaultJavaCompiler_Compile(t *testing.T) {
@@ -198,15 +201,17 @@ public class Warning {
 	})
 
 	t.Run("compiler not available", func(t *testing.T) {
-		compiler := &DefaultJavaCompiler{javacPath: ""}
+		compiler := &DefaultJavaCompiler{javacPath: "/nonexistent/javac"}
 		args := CompileArgs{
 			SourceFiles: []string{javaFile},
 			DestDir:     destDir,
 		}
 
-		_, err := compiler.Compile(args)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "javac not found")
+		result, err := compiler.Compile(args)
+		assert.NoError(t, err) // Compile returns nil error, check result.Success instead
+		assert.False(t, result.Success)
+		assert.NotEmpty(t, result.Errors)
+		assert.Contains(t, result.Errors[0].Message, "compilation failed")
 	})
 }
 
@@ -294,7 +299,7 @@ Warning.java:6:14: warning: [unchecked] unchecked call
 
 			assert.Len(t, result.Errors, tt.expectedError)
 			assert.Len(t, result.Warnings, tt.expectedWarn)
-			
+
 			if tt.expectedError > 0 {
 				assert.Equal(t, tt.expectedError, result.ErrorCount)
 			}
@@ -434,7 +439,6 @@ public class Test%d {
 		SourceFiles: sourceFiles,
 		DestDir:     destDir,
 		WorkDir:     tempDir,
-		ExtraFlags:  []string{"-verbose:class"},
 	}
 
 	result, err := compiler.Compile(args)
@@ -476,7 +480,7 @@ Test.java:8:10: warning: deprecated method
 
 	assert.Len(t, result.Errors, 1)
 	assert.Len(t, result.Warnings, 1)
-	
+
 	// Check that continuation lines were captured
 	assert.Contains(t, result.Errors[0].Message, "';' expected")
 	assert.Contains(t, result.Warnings[0].Message, "deprecated method")

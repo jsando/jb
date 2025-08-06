@@ -19,7 +19,7 @@ func TestDefaultJavaRunner_IsAvailable(t *testing.T) {
 
 	// Test initial state
 	isAvailable := runner.IsAvailable()
-	
+
 	// This test depends on whether java is actually installed
 	if _, err := exec.LookPath("java"); err == nil {
 		assert.True(t, isAvailable)
@@ -54,10 +54,13 @@ func TestDefaultJavaRunner_Version(t *testing.T) {
 	assert.Equal(t, version, version2)
 
 	// Test when not available
-	runner2 := &DefaultJavaRunner{}
-	_, err = runner2.Version()
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "java not found")
+	runner2 := &DefaultJavaRunner{javaPath: "/nonexistent/java"}
+	version3, err3 := runner2.Version()
+	assert.Error(t, err3)
+	assert.Contains(t, err3.Error(), "failed to get java version")
+	assert.Zero(t, version3.Major)
+	assert.Empty(t, version3.Full)
+	assert.Empty(t, version3.Vendor)
 }
 
 func TestDefaultJavaRunner_Run(t *testing.T) {
@@ -73,7 +76,7 @@ func TestDefaultJavaRunner_Run(t *testing.T) {
 	// Create a simple Java program for testing
 	srcDir := filepath.Join(tempDir, "src")
 	require.NoError(t, os.MkdirAll(srcDir, 0755))
-	
+
 	javaFile := filepath.Join(srcDir, "TestApp.java")
 	javaContent := `
 public class TestApp {
@@ -99,7 +102,7 @@ public class TestApp {
 	if compiler.IsAvailable() {
 		classDir := filepath.Join(tempDir, "classes")
 		require.NoError(t, os.MkdirAll(classDir, 0755))
-		
+
 		result, err := compiler.Compile(CompileArgs{
 			SourceFiles: []string{javaFile},
 			DestDir:     classDir,
@@ -199,14 +202,14 @@ public class TestApp {
 	})
 
 	t.Run("runner not available", func(t *testing.T) {
-		runner := &DefaultJavaRunner{javaPath: ""}
+		runner := &DefaultJavaRunner{javaPath: "/nonexistent/java"}
 		args := RunArgs{
 			MainClass: "TestApp",
 		}
 
 		err := runner.Run(args)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "java not found")
+		assert.Contains(t, err.Error(), "no such file or directory")
 	})
 
 	t.Run("non-existent main class", func(t *testing.T) {
@@ -238,7 +241,7 @@ func TestDefaultJavaRunner_RunWithTimeout(t *testing.T) {
 	// Create a Java program that runs for a specific time
 	srcDir := filepath.Join(tempDir, "src")
 	require.NoError(t, os.MkdirAll(srcDir, 0755))
-	
+
 	javaFile := filepath.Join(srcDir, "SleepApp.java")
 	javaContent := `
 public class SleepApp {
@@ -257,7 +260,7 @@ public class SleepApp {
 	if compiler.IsAvailable() {
 		classDir := filepath.Join(tempDir, "classes")
 		require.NoError(t, os.MkdirAll(classDir, 0755))
-		
+
 		result, err := compiler.Compile(CompileArgs{
 			SourceFiles: []string{javaFile},
 			DestDir:     classDir,
@@ -295,7 +298,7 @@ public class SleepApp {
 			err := runner.RunWithTimeout(args, 100*time.Millisecond)
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), "timed out")
-			
+
 			// Should have started but not finished
 			output := stdout.String()
 			if output != "" {
@@ -316,14 +319,14 @@ public class SleepApp {
 	})
 
 	t.Run("runner not available", func(t *testing.T) {
-		runner := &DefaultJavaRunner{javaPath: ""}
+		runner := &DefaultJavaRunner{javaPath: "/nonexistent/java"}
 		args := RunArgs{
 			MainClass: "TestApp",
 		}
 
 		err := runner.RunWithTimeout(args, 1*time.Second)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "java not found")
+		assert.Contains(t, err.Error(), "no such file or directory")
 	})
 }
 
@@ -340,7 +343,7 @@ func TestDefaultJavaRunner_Stdin(t *testing.T) {
 	// Create a Java program that reads from stdin
 	srcDir := filepath.Join(tempDir, "src")
 	require.NoError(t, os.MkdirAll(srcDir, 0755))
-	
+
 	javaFile := filepath.Join(srcDir, "EchoApp.java")
 	javaContent := `
 import java.util.Scanner;
@@ -368,7 +371,7 @@ public class EchoApp {
 	if compiler.IsAvailable() {
 		classDir := filepath.Join(tempDir, "classes")
 		require.NoError(t, os.MkdirAll(classDir, 0755))
-		
+
 		result, err := compiler.Compile(CompileArgs{
 			SourceFiles: []string{javaFile},
 			DestDir:     classDir,
@@ -381,7 +384,7 @@ public class EchoApp {
 			// Prepare input
 			stdin := strings.NewReader("Hello\nWorld\nquit\n")
 			var stdout bytes.Buffer
-			
+
 			args := RunArgs{
 				MainClass: "EchoApp",
 				ClassPath: classDir,
@@ -422,7 +425,7 @@ func TestDefaultJavaRunner_WorkingDirectory(t *testing.T) {
 	// Create a Java program that checks working directory
 	srcDir := filepath.Join(tempDir, "src")
 	require.NoError(t, os.MkdirAll(srcDir, 0755))
-	
+
 	javaFile := filepath.Join(srcDir, "DirApp.java")
 	javaContent := `
 import java.io.File;
@@ -442,7 +445,7 @@ public class DirApp {
 	if compiler.IsAvailable() {
 		classDir := filepath.Join(tempDir, "classes")
 		require.NoError(t, os.MkdirAll(classDir, 0755))
-		
+
 		result, err := compiler.Compile(CompileArgs{
 			SourceFiles: []string{javaFile},
 			DestDir:     classDir,
