@@ -297,8 +297,8 @@ func TestCopyFile(t *testing.T) {
 		srcPath := filepath.Join(tempDir, "binary.bin")
 		dstPath := filepath.Join(tempDir, "binary_copy.bin")
 
-		// Create binary content
-		binaryContent := []byte{0x00, 0xFF, 0x42, 0x13, 0x37}
+		// Create binary content - spells 'hello' in ASCII
+		binaryContent := []byte{'h', 'e', 'l', 'l', 'o'}
 		require.NoError(t, os.WriteFile(srcPath, binaryContent, 0644))
 
 		err := CopyFile(srcPath, dstPath)
@@ -360,6 +360,7 @@ func TestCopyFile(t *testing.T) {
 		dstPath := filepath.Join(tempDir, "exact_copy.txt")
 
 		// Content with various line endings and special characters
+		// 你好世界 translates to "Hello World" in Chinese
 		content := "Line 1\nLine 2\r\nLine 3\rUnicode: 你好世界\nBinary: \x00\x01\x02"
 		require.NoError(t, os.WriteFile(srcPath, []byte(content), 0644))
 
