@@ -2,3 +2,5 @@
 jb
 **/build
 dist/
+coverage.out
+*.test
