@@ -19,18 +19,18 @@ func TestFindFilesBySuffixR(t *testing.T) {
 	srcDir := filepath.Join(tempDir, "src")
 	buildDir := filepath.Join(tempDir, "build")
 	subDir := filepath.Join(srcDir, "com", "example")
-	
+
 	require.NoError(t, os.MkdirAll(srcDir, 0755))
 	require.NoError(t, os.MkdirAll(buildDir, 0755))
 	require.NoError(t, os.MkdirAll(subDir, 0755))
 
 	// Create Java files
 	files := map[string]string{
-		filepath.Join(srcDir, "Main.java"):         "public class Main {}",
-		filepath.Join(srcDir, "Test.JAVA"):         "public class Test {}", // uppercase extension
-		filepath.Join(subDir, "Example.java"):      "public class Example {}",
-		filepath.Join(srcDir, "readme.txt"):        "readme",
-		filepath.Join(buildDir, "Generated.java"):  "public class Generated {}", // should be skipped
+		filepath.Join(srcDir, "Main.java"):        "public class Main {}",
+		filepath.Join(srcDir, "Test.JAVA"):        "public class Test {}", // uppercase extension
+		filepath.Join(subDir, "Example.java"):     "public class Example {}",
+		filepath.Join(srcDir, "readme.txt"):       "readme",
+		filepath.Join(buildDir, "Generated.java"): "public class Generated {}", // should be skipped
 	}
 
 	for path, content := range files {
@@ -47,11 +47,11 @@ func TestFindFilesBySuffixR(t *testing.T) {
 		for i, r := range results {
 			paths[i] = r.Path
 		}
-		
+
 		assert.Contains(t, paths, filepath.Join("src", "Main.java"))
 		assert.Contains(t, paths, filepath.Join("src", "Test.JAVA"))
 		assert.Contains(t, paths, filepath.Join("src", "com", "example", "Example.java"))
-		
+
 		// Verify build directory was skipped
 		for _, path := range paths {
 			assert.NotContains(t, path, "build")
@@ -81,7 +81,7 @@ func TestFindFilesBySuffixR(t *testing.T) {
 		noReadDir := filepath.Join(tempDir, "noread")
 		require.NoError(t, os.MkdirAll(noReadDir, 0755))
 		require.NoError(t, os.WriteFile(filepath.Join(noReadDir, "test.java"), []byte("test"), 0644))
-		
+
 		// Change permissions to write-only
 		require.NoError(t, os.Chmod(noReadDir, 0200))
 		defer os.Chmod(noReadDir, 0755) // restore permissions for cleanup
@@ -100,7 +100,7 @@ func TestFindFilesByGlob(t *testing.T) {
 	// Create test files
 	srcDir := filepath.Join(tempDir, "src")
 	resourcesDir := filepath.Join(tempDir, "resources")
-	
+
 	require.NoError(t, os.MkdirAll(srcDir, 0755))
 	require.NoError(t, os.MkdirAll(resourcesDir, 0755))
 
@@ -168,7 +168,7 @@ func TestWriteFile(t *testing.T) {
 	t.Run("write new file", func(t *testing.T) {
 		filePath := filepath.Join(tempDir, "test.txt")
 		content := "Hello, World!"
-		
+
 		err := WriteFile(filePath, content)
 		assert.NoError(t, err)
 
@@ -180,10 +180,10 @@ func TestWriteFile(t *testing.T) {
 
 	t.Run("overwrite existing file", func(t *testing.T) {
 		filePath := filepath.Join(tempDir, "existing.txt")
-		
+
 		// Create initial file
 		require.NoError(t, os.WriteFile(filePath, []byte("old content"), 0644))
-		
+
 		// Overwrite it
 		newContent := "new content"
 		err := WriteFile(filePath, newContent)
@@ -271,7 +271,7 @@ func TestCopyFile(t *testing.T) {
 		srcPath := filepath.Join(tempDir, "source.txt")
 		dstPath := filepath.Join(tempDir, "dest.txt")
 		content := "Hello, World!"
-		
+
 		require.NoError(t, os.WriteFile(srcPath, []byte(content), 0644))
 
 		err := CopyFile(srcPath, dstPath)
@@ -289,7 +289,7 @@ func TestCopyFile(t *testing.T) {
 	t.Run("copy binary file", func(t *testing.T) {
 		srcPath := filepath.Join(tempDir, "binary.bin")
 		dstPath := filepath.Join(tempDir, "binary_copy.bin")
-		
+
 		// Create binary content
 		binaryContent := []byte{0x00, 0xFF, 0x42, 0x13, 0x37}
 		require.NoError(t, os.WriteFile(srcPath, binaryContent, 0644))
@@ -306,7 +306,7 @@ func TestCopyFile(t *testing.T) {
 	t.Run("overwrite existing file", func(t *testing.T) {
 		srcPath := filepath.Join(tempDir, "source2.txt")
 		dstPath := filepath.Join(tempDir, "existing.txt")
-		
+
 		require.NoError(t, os.WriteFile(srcPath, []byte("new content"), 0644))
 		require.NoError(t, os.WriteFile(dstPath, []byte("old content"), 0644))
 
@@ -331,7 +331,7 @@ func TestCopyFile(t *testing.T) {
 	t.Run("destination directory not found", func(t *testing.T) {
 		srcPath := filepath.Join(tempDir, "source3.txt")
 		dstPath := filepath.Join(tempDir, "nonexistent", "dest.txt")
-		
+
 		require.NoError(t, os.WriteFile(srcPath, []byte("content"), 0644))
 
 		err := CopyFile(srcPath, dstPath)
@@ -341,7 +341,7 @@ func TestCopyFile(t *testing.T) {
 	t.Run("source is directory", func(t *testing.T) {
 		srcPath := filepath.Join(tempDir, "srcdir")
 		dstPath := filepath.Join(tempDir, "dstdir")
-		
+
 		require.NoError(t, os.MkdirAll(srcPath, 0755))
 
 		err := CopyFile(srcPath, dstPath)
@@ -351,7 +351,7 @@ func TestCopyFile(t *testing.T) {
 	t.Run("copy preserves content exactly", func(t *testing.T) {
 		srcPath := filepath.Join(tempDir, "exact.txt")
 		dstPath := filepath.Join(tempDir, "exact_copy.txt")
-		
+
 		// Content with various line endings and special characters
 		content := "Line 1\nLine 2\r\nLine 3\rUnicode: 你好世界\nBinary: \x00\x01\x02"
 		require.NoError(t, os.WriteFile(srcPath, []byte(content), 0644))
@@ -395,7 +395,7 @@ func TestFileExists(t *testing.T) {
 		// Create a file and a symlink to it
 		filePath := filepath.Join(tempDir, "target.txt")
 		linkPath := filepath.Join(tempDir, "link.txt")
-		
+
 		require.NoError(t, os.WriteFile(filePath, []byte("content"), 0644))
 		require.NoError(t, os.Symlink(filePath, linkPath))
 
@@ -408,7 +408,7 @@ func TestFileExists(t *testing.T) {
 		// Create a symlink to non-existent file
 		targetPath := filepath.Join(tempDir, "nonexistent_target.txt")
 		linkPath := filepath.Join(tempDir, "broken_link.txt")
-		
+
 		require.NoError(t, os.Symlink(targetPath, linkPath))
 
 		// Broken symlink should not exist
@@ -433,7 +433,7 @@ func TestSourceFileInfo(t *testing.T) {
 		Info: &mockFileInfo{name: "Test.java", size: 100},
 		Path: "src/Test.java",
 	}
-	
+
 	assert.Equal(t, "Test.java", info.Info.Name())
 	assert.Equal(t, int64(100), info.Info.Size())
 	assert.Equal(t, "src/Test.java", info.Path)
@@ -446,7 +446,7 @@ func TestFoundFileInfo(t *testing.T) {
 		Path: "/project/src/Main.java",
 		Info: &mockFileInfo{name: "Main.java", size: 200},
 	}
-	
+
 	assert.Equal(t, "/project/src", info.Dir)
 	assert.Equal(t, "/project/src/Main.java", info.Path)
 	assert.Equal(t, "Main.java", info.Info.Name())

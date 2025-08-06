@@ -171,7 +171,7 @@ func TestGetModuleFilePath(t *testing.T) {
 	tempDir := t.TempDir()
 	moduleDir := filepath.Join(tempDir, "mymodule")
 	require.NoError(t, os.MkdirAll(moduleDir, 0755))
-	
+
 	moduleFile := filepath.Join(moduleDir, ModuleFilename)
 	require.NoError(t, os.WriteFile(moduleFile, []byte("{}"), 0644))
 
@@ -222,7 +222,7 @@ func TestModuleLoader_GetModule(t *testing.T) {
 	tempDir := t.TempDir()
 	moduleDir := filepath.Join(tempDir, "mymodule")
 	require.NoError(t, os.MkdirAll(moduleDir, 0755))
-	
+
 	moduleData := `{
 		"group": "com.example",
 		"version": "1.0.0",
@@ -265,10 +265,10 @@ func TestModuleLoader_LoadProject_WithProjectFile(t *testing.T) {
 	projectDir := filepath.Join(tempDir, "myproject")
 	module1Dir := filepath.Join(projectDir, "module1")
 	module2Dir := filepath.Join(projectDir, "module2")
-	
+
 	require.NoError(t, os.MkdirAll(module1Dir, 0755))
 	require.NoError(t, os.MkdirAll(module2Dir, 0755))
-	
+
 	// Create project file
 	projectData := `{
 		"name": "MyProject",
@@ -276,11 +276,11 @@ func TestModuleLoader_LoadProject_WithProjectFile(t *testing.T) {
 	}`
 	projectFile := filepath.Join(projectDir, ProjectFilename)
 	require.NoError(t, os.WriteFile(projectFile, []byte(projectData), 0644))
-	
+
 	// Create module files
 	module1Data := `{"group": "com.example", "version": "1.0.0"}`
 	require.NoError(t, os.WriteFile(filepath.Join(module1Dir, ModuleFilename), []byte(module1Data), 0644))
-	
+
 	module2Data := `{"group": "com.example", "version": "1.0.0"}`
 	require.NoError(t, os.WriteFile(filepath.Join(module2Dir, ModuleFilename), []byte(module2Data), 0644))
 
@@ -310,7 +310,7 @@ func TestModuleLoader_LoadProject_WithModuleFile(t *testing.T) {
 	tempDir := t.TempDir()
 	moduleDir := filepath.Join(tempDir, "mymodule")
 	require.NoError(t, os.MkdirAll(moduleDir, 0755))
-	
+
 	moduleData := `{"group": "com.example", "version": "1.0.0"}`
 	moduleFile := filepath.Join(moduleDir, ModuleFilename)
 	require.NoError(t, os.WriteFile(moduleFile, []byte(moduleData), 0644))
@@ -342,14 +342,14 @@ func TestModuleLoader_LoadProject_ModuleWithParentProject(t *testing.T) {
 	projectDir := filepath.Join(tempDir, "myproject")
 	moduleDir := filepath.Join(projectDir, "module1")
 	require.NoError(t, os.MkdirAll(moduleDir, 0755))
-	
+
 	// Create project file
 	projectData := `{
 		"name": "MyProject",
 		"modules": ["module1"]
 	}`
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ProjectFilename), []byte(projectData), 0644))
-	
+
 	// Create module file
 	moduleData := `{"group": "com.example", "version": "1.0.0"}`
 	moduleFile := filepath.Join(moduleDir, ModuleFilename)
@@ -376,7 +376,7 @@ func TestModuleLoader_LoadProject_ModuleWithParentProject(t *testing.T) {
 	// Due to implementation issue, creates synthetic project
 	assert.Equal(t, "module1", project2.Name) // synthetic project uses module dir name
 	assert.Equal(t, "module1", module2.Name)
-	
+
 	// Test 3: Load module file directly - creates synthetic project
 	// because module instance doesn't match the one in the project
 	loader2 := NewModuleLoader()
@@ -417,7 +417,7 @@ func TestModule_HashContent(t *testing.T) {
 
 	// Mock hasher
 	hasher := &mockHasher{data: make([]byte, 0)}
-	
+
 	err := module.HashContent(hasher)
 	assert.NoError(t, err)
 	assert.Equal(t, []byte("test module content"), hasher.data)
@@ -430,7 +430,7 @@ func TestModule_GetModuleReferencesInBuildOrder(t *testing.T) {
 		module1 := &Module{Name: "module1", References: []*Module{}}
 		module2 := &Module{Name: "module2", References: []*Module{module1}}
 		module3 := &Module{Name: "module3", References: []*Module{module1, module2}}
-		
+
 		// Test getting references in build order
 		refs, err := module3.GetModuleReferencesInBuildOrder()
 		assert.NoError(t, err)
@@ -445,17 +445,17 @@ func TestModule_GetModuleReferencesInBuildOrder(t *testing.T) {
 		// Create modules with circular reference
 		module1 := &Module{Name: "module1", References: []*Module{}}
 		module2 := &Module{Name: "module2", References: []*Module{}}
-		
+
 		// Create circular reference
 		module1.References = []*Module{module2}
 		module2.References = []*Module{module1}
-		
+
 		// Should detect circular reference
 		_, err := module1.GetModuleReferencesInBuildOrder()
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "circular reference")
 	})
-	
+
 	// Test module with no references
 	t.Run("no references", func(t *testing.T) {
 		module := &Module{Name: "standalone", References: []*Module{}}
@@ -472,11 +472,11 @@ func TestModuleLoader_GetModule_WithReferences(t *testing.T) {
 	libDir := filepath.Join(tempDir, "lib")
 	require.NoError(t, os.MkdirAll(mainDir, 0755))
 	require.NoError(t, os.MkdirAll(libDir, 0755))
-	
+
 	// Create lib module
 	libData := `{"group": "com.example", "version": "1.0.0"}`
 	require.NoError(t, os.WriteFile(filepath.Join(libDir, ModuleFilename), []byte(libData), 0644))
-	
+
 	// Create main module with reference to lib
 	mainData := `{
 		"group": "com.example",
@@ -487,7 +487,7 @@ func TestModuleLoader_GetModule_WithReferences(t *testing.T) {
 	require.NoError(t, os.WriteFile(mainFile, []byte(mainData), 0644))
 
 	loader := NewModuleLoader()
-	
+
 	// Load main module
 	module, err := loader.GetModule(mainFile)
 	require.NoError(t, err)
@@ -514,7 +514,7 @@ func TestModuleFileJSON_Validation(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:        "invalid references format", 
+			name:        "invalid references format",
 			jsonData:    `{"references": "not-an-array"}`,
 			expectError: true,
 		},
@@ -611,11 +611,11 @@ func TestLoadModuleFile_ValidationErrors(t *testing.T) {
 
 func TestGetModuleFilePath_EdgeCases(t *testing.T) {
 	tempDir := t.TempDir()
-	
+
 	// Create a file that's not a module file
 	wrongFile := filepath.Join(tempDir, "wrong.json")
 	require.NoError(t, os.WriteFile(wrongFile, []byte("{}"), 0644))
-	
+
 	_, err := getModuleFilePath(wrongFile)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "module file must be named")
@@ -625,11 +625,11 @@ func TestModuleLoader_GetModule_InvalidModuleFile(t *testing.T) {
 	tempDir := t.TempDir()
 	moduleDir := filepath.Join(tempDir, "badmodule")
 	require.NoError(t, os.MkdirAll(moduleDir, 0755))
-	
+
 	// Create invalid module file
 	moduleFile := filepath.Join(moduleDir, ModuleFilename)
 	require.NoError(t, os.WriteFile(moduleFile, []byte("invalid json"), 0644))
-	
+
 	loader := NewModuleLoader()
 	_, err := loader.GetModule(moduleFile)
 	assert.Error(t, err)
@@ -639,14 +639,14 @@ func TestModuleLoader_GetModule_InvalidDependency(t *testing.T) {
 	tempDir := t.TempDir()
 	moduleDir := filepath.Join(tempDir, "module")
 	require.NoError(t, os.MkdirAll(moduleDir, 0755))
-	
+
 	// Create module with invalid dependency
 	moduleData := `{
 		"dependencies": ["invalid-dependency"]
 	}`
 	moduleFile := filepath.Join(moduleDir, ModuleFilename)
 	require.NoError(t, os.WriteFile(moduleFile, []byte(moduleData), 0644))
-	
+
 	loader := NewModuleLoader()
 	_, err := loader.GetModule(moduleFile)
 	assert.Error(t, err)
@@ -657,14 +657,14 @@ func TestModuleLoader_GetModule_MissingReference(t *testing.T) {
 	tempDir := t.TempDir()
 	moduleDir := filepath.Join(tempDir, "module")
 	require.NoError(t, os.MkdirAll(moduleDir, 0755))
-	
+
 	// Create module with reference to non-existent module
 	moduleData := `{
 		"references": ["../nonexistent"]
 	}`
 	moduleFile := filepath.Join(moduleDir, ModuleFilename)
 	require.NoError(t, os.WriteFile(moduleFile, []byte(moduleData), 0644))
-	
+
 	loader := NewModuleLoader()
 	_, err := loader.GetModule(moduleFile)
 	assert.Error(t, err)
@@ -672,11 +672,11 @@ func TestModuleLoader_GetModule_MissingReference(t *testing.T) {
 
 func TestProject_LoadProject_InvalidProjectFile(t *testing.T) {
 	tempDir := t.TempDir()
-	
+
 	// Create invalid project file
 	projectFile := filepath.Join(tempDir, ProjectFilename)
 	require.NoError(t, os.WriteFile(projectFile, []byte("invalid json"), 0644))
-	
+
 	loader := NewModuleLoader()
 	_, _, err := loader.LoadProject(projectFile)
 	assert.Error(t, err)
@@ -684,7 +684,7 @@ func TestProject_LoadProject_InvalidProjectFile(t *testing.T) {
 
 func TestProject_LoadProject_MissingModule(t *testing.T) {
 	tempDir := t.TempDir()
-	
+
 	// Create project file referencing non-existent module
 	projectData := `{
 		"name": "TestProject",
@@ -692,7 +692,7 @@ func TestProject_LoadProject_MissingModule(t *testing.T) {
 	}`
 	projectFile := filepath.Join(tempDir, ProjectFilename)
 	require.NoError(t, os.WriteFile(projectFile, []byte(projectData), 0644))
-	
+
 	loader := NewModuleLoader()
 	_, _, err := loader.LoadProject(projectFile)
 	assert.Error(t, err)
@@ -708,10 +708,10 @@ func TestParseCoordinates_EdgeCases(t *testing.T) {
 	// Test with empty parts
 	_, err := ParseCoordinates("::1.0.0")
 	assert.Error(t, err)
-	
+
 	_, err = ParseCoordinates("org.example::1.0.0")
 	assert.Error(t, err)
-	
+
 	_, err = ParseCoordinates("org.example:lib:")
 	assert.Error(t, err)
 }
