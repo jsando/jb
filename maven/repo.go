@@ -54,7 +54,7 @@ func (jc *LocalRepository) artifactDir(groupID, artifactID, version string) stri
 	groupIDWithSlashes := strings.ReplaceAll(groupID, ".", "/")
 	relPath := filepath.Join(strings.Split(groupIDWithSlashes, "/")...)
 	relPath = filepath.Join(relPath, artifactID, version)
-	
+
 	baseDir := jc.baseDir
 	if strings.HasPrefix(baseDir, "~") {
 		homeDir, err := os.UserHomeDir()
