@@ -3,6 +3,7 @@ package util
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -202,6 +203,9 @@ func TestWriteFile(t *testing.T) {
 	})
 
 	t.Run("write to read-only directory", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Skipping read-only directory test on Windows")
+		}
 		readOnlyDir := filepath.Join(tempDir, "readonly")
 		require.NoError(t, os.MkdirAll(readOnlyDir, 0755))
 		require.NoError(t, os.Chmod(readOnlyDir, 0555))
@@ -243,6 +247,9 @@ func TestReadFileAsString(t *testing.T) {
 	})
 
 	t.Run("read file with no permissions", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("Skipping permissions test on Windows")
+		}
 		filePath := filepath.Join(tempDir, "noperm.txt")
 		require.NoError(t, os.WriteFile(filePath, []byte("secret"), 0000))
 		defer os.Chmod(filePath, 0644)

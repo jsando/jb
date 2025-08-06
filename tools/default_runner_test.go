@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -209,7 +210,11 @@ public class TestApp {
 
 		err := runner.Run(args)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "no such file or directory")
+		if runtime.GOOS == "windows" {
+			assert.Contains(t, err.Error(), "executable file not found")
+		} else {
+			assert.Contains(t, err.Error(), "no such file or directory")
+		}
 	})
 
 	t.Run("non-existent main class", func(t *testing.T) {
@@ -326,7 +331,11 @@ public class SleepApp {
 
 		err := runner.RunWithTimeout(args, 1*time.Second)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "no such file or directory")
+		if runtime.GOOS == "windows" {
+			assert.Contains(t, err.Error(), "executable file not found")
+		} else {
+			assert.Contains(t, err.Error(), "no such file or directory")
+		}
 	})
 }
 

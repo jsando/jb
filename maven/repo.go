@@ -54,11 +54,16 @@ func (jc *LocalRepository) artifactDir(groupID, artifactID, version string) stri
 	groupIDWithSlashes := strings.ReplaceAll(groupID, ".", "/")
 	relPath := filepath.Join(strings.Split(groupIDWithSlashes, "/")...)
 	relPath = filepath.Join(relPath, artifactID, version)
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		panic(err)
+	
+	baseDir := jc.baseDir
+	if strings.HasPrefix(baseDir, "~") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			panic(err)
+		}
+		baseDir = filepath.Join(homeDir, baseDir[1:])
 	}
-	return filepath.Join(strings.ReplaceAll(jc.baseDir, "~", homeDir), relPath)
+	return filepath.Join(baseDir, relPath)
 }
 
 func (c *LocalRepository) GetPOM(groupID, artifactID, version string) (*POM, error) {
