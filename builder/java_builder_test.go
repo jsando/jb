@@ -1,4 +1,4 @@
-package java
+package builder
 
 import (
 	"crypto/sha1"
@@ -10,8 +10,6 @@ import (
 	"testing"
 
 	"github.com/jsando/jb/project"
-	"github.com/jsando/jb/tools"
-	"github.com/jsando/jb/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -80,7 +78,7 @@ func TestNewBuilder(t *testing.T) {
 
 func TestNewBuilderWithTools(t *testing.T) {
 	logger := &MockBuildLog{}
-	mockProvider := &tools.MockToolProvider{}
+	mockProvider := &MockToolProvider{}
 	builder := NewBuilderWithTools(logger, mockProvider)
 
 	assert.NotNil(t, builder)
@@ -132,20 +130,20 @@ func TestGetModuleJarPath(t *testing.T) {
 
 func TestCompileJava_Success(t *testing.T) {
 	// Setup
-	mockCompiler := &tools.MockJavaCompiler{
+	mockCompiler := &MockJavaCompiler{
 		IsAvailableFunc: func() bool { return true },
-		VersionFunc: func() (tools.JavaVersion, error) {
-			return tools.JavaVersion{Major: 17, Minor: 0, Patch: 1}, nil
+		VersionFunc: func() (JavaVersion, error) {
+			return JavaVersion{Major: 17, Minor: 0, Patch: 1}, nil
 		},
-		CompileFunc: func(args tools.CompileArgs) (tools.CompileResult, error) {
-			return tools.CompileResult{
+		CompileFunc: func(args CompileArgs) (CompileResult, error) {
+			return CompileResult{
 				Success:      true,
 				WarningCount: 0,
 				ErrorCount:   0,
 			}, nil
 		},
 	}
-	mockProvider := &tools.MockToolProvider{
+	mockProvider := &MockToolProvider{
 		Compiler: mockCompiler,
 	}
 
@@ -157,7 +155,7 @@ func TestCompileJava_Success(t *testing.T) {
 		ModuleDirAbs: "/test/project",
 	}
 
-	sourceFiles := []util.SourceFileInfo{
+	sourceFiles := []project.SourceFileInfo{
 		{Path: "src/Main.java"},
 		{Path: "src/Helper.java"},
 	}
@@ -179,10 +177,10 @@ func TestCompileJava_Success(t *testing.T) {
 
 func TestCompileJava_CompilerNotAvailable(t *testing.T) {
 	// Setup
-	mockCompiler := &tools.MockJavaCompiler{
+	mockCompiler := &MockJavaCompiler{
 		IsAvailableFunc: func() bool { return false },
 	}
-	mockProvider := &tools.MockToolProvider{
+	mockProvider := &MockToolProvider{
 		Compiler: mockCompiler,
 	}
 
@@ -204,20 +202,20 @@ func TestCompileJava_CompilerNotAvailable(t *testing.T) {
 
 func TestCompileJava_WithWarnings(t *testing.T) {
 	// Setup
-	mockCompiler := &tools.MockJavaCompiler{
+	mockCompiler := &MockJavaCompiler{
 		IsAvailableFunc: func() bool { return true },
-		CompileFunc: func(args tools.CompileArgs) (tools.CompileResult, error) {
-			return tools.CompileResult{
+		CompileFunc: func(args CompileArgs) (CompileResult, error) {
+			return CompileResult{
 				Success:      true,
 				WarningCount: 2,
-				Warnings: []tools.CompileWarning{
+				Warnings: []CompileWarning{
 					{File: "Main.java", Line: 10, Column: 5, Message: "deprecated method"},
 					{Message: "unchecked cast"},
 				},
 			}, nil
 		},
 	}
-	mockProvider := &tools.MockToolProvider{
+	mockProvider := &MockToolProvider{
 		Compiler: mockCompiler,
 	}
 
@@ -230,7 +228,7 @@ func TestCompileJava_WithWarnings(t *testing.T) {
 	}
 
 	// Execute
-	err := builder.compileJava(module, taskLog, "", "", "", nil, []util.SourceFileInfo{{Path: "Main.java"}})
+	err := builder.compileJava(module, taskLog, "", "", "", nil, []project.SourceFileInfo{{Path: "Main.java"}})
 
 	// Verify
 	assert.NoError(t, err)
@@ -241,20 +239,20 @@ func TestCompileJava_WithWarnings(t *testing.T) {
 
 func TestCompileJava_WithErrors(t *testing.T) {
 	// Setup
-	mockCompiler := &tools.MockJavaCompiler{
+	mockCompiler := &MockJavaCompiler{
 		IsAvailableFunc: func() bool { return true },
-		CompileFunc: func(args tools.CompileArgs) (tools.CompileResult, error) {
-			return tools.CompileResult{
+		CompileFunc: func(args CompileArgs) (CompileResult, error) {
+			return CompileResult{
 				Success:    false,
 				ErrorCount: 2,
-				Errors: []tools.CompileError{
+				Errors: []CompileError{
 					{File: "Main.java", Line: 15, Column: 10, Message: "cannot find symbol"},
 					{Message: "package does not exist"},
 				},
 			}, nil
 		},
 	}
-	mockProvider := &tools.MockToolProvider{
+	mockProvider := &MockToolProvider{
 		Compiler: mockCompiler,
 	}
 
@@ -267,7 +265,7 @@ func TestCompileJava_WithErrors(t *testing.T) {
 	}
 
 	// Execute
-	err := builder.compileJava(module, taskLog, "", "", "", nil, []util.SourceFileInfo{{Path: "Main.java"}})
+	err := builder.compileJava(module, taskLog, "", "", "", nil, []project.SourceFileInfo{{Path: "Main.java"}})
 
 	// Verify
 	assert.Error(t, err)
@@ -289,10 +287,10 @@ func TestBuildJar_Success(t *testing.T) {
 	depJar := filepath.Join(libDir, "dep.jar")
 	require.NoError(t, os.WriteFile(depJar, []byte("fake jar content"), 0644))
 
-	mockJar := &tools.MockJarTool{
+	mockJar := &MockJarTool{
 		IsAvailableFunc: func() bool { return true },
 	}
-	mockProvider := &tools.MockToolProvider{
+	mockProvider := &MockToolProvider{
 		JarTool: mockJar,
 	}
 
@@ -323,10 +321,10 @@ func TestBuildJar_Success(t *testing.T) {
 }
 
 func TestBuildJar_NotAvailable(t *testing.T) {
-	mockJar := &tools.MockJarTool{
+	mockJar := &MockJarTool{
 		IsAvailableFunc: func() bool { return false },
 	}
-	mockProvider := &tools.MockToolProvider{
+	mockProvider := &MockToolProvider{
 		JarTool: mockJar,
 	}
 
@@ -341,8 +339,8 @@ func TestBuildJar_NotAvailable(t *testing.T) {
 }
 
 func TestRun_Success(t *testing.T) {
-	mockRunner := &tools.MockJavaRunner{}
-	mockProvider := &tools.MockToolProvider{
+	mockRunner := &MockJavaRunner{}
+	mockProvider := &MockToolProvider{
 		Runner: mockRunner,
 	}
 
@@ -377,8 +375,8 @@ func TestRunTest_Success(t *testing.T) {
 	buildDir := filepath.Join(tempDir, "build", "tmp", "classes")
 	require.NoError(t, os.MkdirAll(buildDir, 0755))
 
-	mockRunner := &tools.MockJavaRunner{}
-	mockProvider := &tools.MockToolProvider{
+	mockRunner := &MockJavaRunner{}
+	mockProvider := &MockToolProvider{
 		Runner: mockRunner,
 	}
 
@@ -531,9 +529,9 @@ func TestBuild_UpToDate(t *testing.T) {
 
 	// Write the hash file with the expected hash
 	hashFile := filepath.Join(buildDir, buildHashFile)
-	require.NoError(t, util.WriteFile(hashFile, expectedHash))
+	require.NoError(t, project.WriteFile(hashFile, expectedHash))
 
-	mockProvider := &tools.MockToolProvider{}
+	mockProvider := &MockToolProvider{}
 	logger := &MockBuildLog{}
 	builder := NewBuilderWithTools(logger, mockProvider)
 
@@ -543,7 +541,7 @@ func TestBuild_UpToDate(t *testing.T) {
 	// Verify - should see "up to date" task
 	assert.Contains(t, logger.Tasks, "up to date")
 	// Compiler should not be called
-	mockCompiler := mockProvider.GetCompiler().(*tools.MockJavaCompiler)
+	mockCompiler := mockProvider.GetCompiler().(*MockJavaCompiler)
 	assert.Len(t, mockCompiler.CompileCalls, 0)
 }
 
@@ -558,21 +556,21 @@ func TestBuild_WithSources(t *testing.T) {
 	require.NoError(t, os.WriteFile(javaFile, []byte("public class Main {}"), 0644))
 
 	// Setup mocks
-	mockCompiler := &tools.MockJavaCompiler{
+	mockCompiler := &MockJavaCompiler{
 		IsAvailableFunc: func() bool { return true },
-		VersionFunc: func() (tools.JavaVersion, error) {
-			return tools.JavaVersion{Major: 17}, nil
+		VersionFunc: func() (JavaVersion, error) {
+			return JavaVersion{Major: 17}, nil
 		},
-		CompileFunc: func(args tools.CompileArgs) (tools.CompileResult, error) {
-			return tools.CompileResult{Success: true}, nil
+		CompileFunc: func(args CompileArgs) (CompileResult, error) {
+			return CompileResult{Success: true}, nil
 		},
 	}
 
-	mockJar := &tools.MockJarTool{
+	mockJar := &MockJarTool{
 		IsAvailableFunc: func() bool { return true },
 	}
 
-	mockProvider := &tools.MockToolProvider{
+	mockProvider := &MockToolProvider{
 		Compiler: mockCompiler,
 		JarTool:  mockJar,
 	}
@@ -616,11 +614,11 @@ func TestBuild_WithResources(t *testing.T) {
 	require.NoError(t, os.WriteFile(propFile, []byte("key=value"), 0644))
 
 	// Setup mocks
-	mockJar := &tools.MockJarTool{
+	mockJar := &MockJarTool{
 		IsAvailableFunc: func() bool { return true },
 	}
 
-	mockProvider := &tools.MockToolProvider{
+	mockProvider := &MockToolProvider{
 		JarTool: mockJar,
 	}
 
@@ -660,20 +658,20 @@ func TestBuild_CompilationFailure(t *testing.T) {
 	require.NoError(t, os.WriteFile(javaFile, []byte("public class BadCode { syntax error }"), 0644))
 
 	// Setup mocks
-	mockCompiler := &tools.MockJavaCompiler{
+	mockCompiler := &MockJavaCompiler{
 		IsAvailableFunc: func() bool { return true },
-		CompileFunc: func(args tools.CompileArgs) (tools.CompileResult, error) {
-			return tools.CompileResult{
+		CompileFunc: func(args CompileArgs) (CompileResult, error) {
+			return CompileResult{
 				Success:    false,
 				ErrorCount: 1,
-				Errors: []tools.CompileError{
+				Errors: []CompileError{
 					{File: "BadCode.java", Line: 1, Column: 23, Message: "syntax error"},
 				},
 			}, nil
 		},
 	}
 
-	mockProvider := &tools.MockToolProvider{
+	mockProvider := &MockToolProvider{
 		Compiler: mockCompiler,
 	}
 
@@ -698,7 +696,7 @@ func TestBuild_CompilationFailure(t *testing.T) {
 	assert.Contains(t, logger.Errors, "compile java sources: compilation failed with 1 error(s)")
 
 	// Jar should not have been created
-	mockJar := mockProvider.GetJarTool().(*tools.MockJarTool)
+	mockJar := mockProvider.GetJarTool().(*MockJarTool)
 	assert.Len(t, mockJar.CreateCalls, 0, "Jar tool should not have been called")
 }
 
@@ -780,10 +778,10 @@ func TestBuildJar_ExecutableJar(t *testing.T) {
 	require.NoError(t, os.WriteFile(dep1, []byte("jar1"), 0644))
 	require.NoError(t, os.WriteFile(dep2, []byte("jar2"), 0644))
 
-	mockJar := &tools.MockJarTool{
+	mockJar := &MockJarTool{
 		IsAvailableFunc: func() bool { return true },
 	}
-	mockProvider := &tools.MockToolProvider{
+	mockProvider := &MockToolProvider{
 		JarTool: mockJar,
 	}
 
@@ -815,12 +813,12 @@ func TestBuildJar_ExecutableJar(t *testing.T) {
 }
 
 func TestRun_Error(t *testing.T) {
-	mockRunner := &tools.MockJavaRunner{
-		RunFunc: func(args tools.RunArgs) error {
+	mockRunner := &MockJavaRunner{
+		RunFunc: func(args RunArgs) error {
 			return errors.New("application crashed")
 		},
 	}
-	mockProvider := &tools.MockToolProvider{
+	mockProvider := &MockToolProvider{
 		Runner: mockRunner,
 	}
 
