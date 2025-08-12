@@ -4,10 +4,16 @@ import (
 	"flag"
 	"fmt"
 	"github.com/jsando/jb/builder"
-	"github.com/jsando/jb/version"
 	"github.com/pterm/pterm"
 	"os"
 	"slices"
+)
+
+// Build time variables set via -ldflags
+var (
+	Version = "dev"
+	Commit  = "none"
+	Date    = "unknown"
 )
 
 const USAGE = `jb - The Easier Java Build Tool
@@ -33,9 +39,9 @@ func usage(exitCode int) {
 }
 
 func versionCommand() {
-	fmt.Printf("jb version %s\n", version.Version)
-	fmt.Printf(" commit: %s\n", version.Commit)
-	fmt.Printf(" built: %s\n", version.Date)
+	fmt.Printf("jb version %s\n", Version)
+	fmt.Printf(" commit: %s\n", Commit)
+	fmt.Printf(" built: %s\n", Date)
 	os.Exit(0)
 }
 

@@ -1,4 +1,4 @@
-package tools
+package builder
 
 import (
 	"os"

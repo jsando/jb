@@ -1,4 +1,4 @@
-package java
+package builder
 
 import (
 	"crypto/sha1"
@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"github.com/jsando/jb/maven"
 	"github.com/jsando/jb/project"
-	"github.com/jsando/jb/tools"
-	"github.com/jsando/jb/util"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,19 +20,19 @@ const (
 type Builder struct {
 	repo         *maven.LocalRepository
 	logger       project.BuildLog
-	toolProvider tools.ToolProvider
+	toolProvider ToolProvider
 }
 
 func NewBuilder(logger project.BuildLog) *Builder {
 	return &Builder{
 		repo:         maven.OpenLocalRepository(),
 		logger:       logger,
-		toolProvider: tools.GetDefaultToolProvider(),
+		toolProvider: GetDefaultToolProvider(),
 	}
 }
 
 // NewBuilderWithTools creates a new Builder with a custom tool provider
-func NewBuilderWithTools(logger project.BuildLog, toolProvider tools.ToolProvider) *Builder {
+func NewBuilderWithTools(logger project.BuildLog, toolProvider ToolProvider) *Builder {
 	return &Builder{
 		repo:         maven.OpenLocalRepository(),
 		logger:       logger,
@@ -53,7 +51,7 @@ func (j *Builder) Run(module *project.Module, progArgs []string) error {
 	jarPath := j.getModuleJarPath(module)
 
 	runner := j.toolProvider.GetRunner()
-	runArgs := tools.RunArgs{
+	runArgs := RunArgs{
 		JarFile:     jarPath,
 		ProgramArgs: progArgs,
 		WorkDir:     module.ModuleDirAbs,
@@ -74,7 +72,7 @@ func (j *Builder) Build(module *project.Module) {
 	jarDate := ""
 
 	// Gather java source files
-	sources, err := util.FindFilesBySuffixR(module.SourceDirAbs, ".java")
+	sources, err := project.FindFilesBySuffixR(module.SourceDirAbs, ".java")
 	if j.logger.CheckError("finding java sources", err) {
 		return
 	}
@@ -94,7 +92,7 @@ func (j *Builder) Build(module *project.Module) {
 	}
 
 	// Gather embeds
-	embedFiles, err := util.FindFilesByGlob(module.ResourceDirAbs, module.Resources)
+	embedFiles, err := project.FindFilesByGlob(module.ResourceDirAbs, module.Resources)
 	if j.logger.CheckError("finding embeds", err) {
 		return
 	}
@@ -116,7 +114,7 @@ func (j *Builder) Build(module *project.Module) {
 		hasher.Write(bytes)
 	}
 	hash := hex.EncodeToString(hasher.Sum(nil))
-	oldHash, err := util.ReadFileAsString(filepath.Join(module.ModuleDirAbs, "build", buildHashFile))
+	oldHash, err := project.ReadFileAsString(filepath.Join(module.ModuleDirAbs, "build", buildHashFile))
 	if j.logger.CheckError("reading build hash", err) {
 		return
 	}
@@ -181,7 +179,7 @@ func (j *Builder) Build(module *project.Module) {
 				return
 			}
 
-			err = util.CopyFile(embed.Path, dst)
+			err = project.CopyFile(embed.Path, dst)
 			if j.logger.CheckError(fmt.Sprintf("copying embed %s to %s", embed.Path, dst), err) {
 				return
 			}
@@ -201,11 +199,11 @@ func (j *Builder) Build(module *project.Module) {
 	}
 
 	// write build hash
-	err = util.WriteFile(filepath.Join(buildDir, buildHashFile), hash)
+	err = project.WriteFile(filepath.Join(buildDir, buildHashFile), hash)
 	j.logger.CheckError("writing build hash", err)
 }
 
-func (j *Builder) compileJava(module *project.Module, task project.TaskLog, buildTmpDir, buildClasses, classPath string, extraFlags []string, sourceFiles []util.SourceFileInfo) error {
+func (j *Builder) compileJava(module *project.Module, task project.TaskLog, buildTmpDir, buildClasses, classPath string, extraFlags []string, sourceFiles []project.SourceFileInfo) error {
 	compiler := j.toolProvider.GetCompiler()
 
 	// Check if compiler is available
@@ -225,7 +223,7 @@ func (j *Builder) compileJava(module *project.Module, task project.TaskLog, buil
 	}
 
 	// Prepare compilation arguments
-	compileArgs := tools.CompileArgs{
+	compileArgs := CompileArgs{
 		SourceFiles: sourcePaths,
 		ClassPath:   classPath,
 		DestDir:     buildClasses,
@@ -318,7 +316,7 @@ func (j *Builder) writePOM(module *project.Module, deps []*project.Module) error
 	}
 	xmlHeader := []byte(xml.Header)
 	pomContent := append(xmlHeader, pomXML...)
-	if err := util.WriteFile(pomPath, string(pomContent)); err != nil {
+	if err := project.WriteFile(pomPath, string(pomContent)); err != nil {
 		return fmt.Errorf("failed to write POM to %s: %w", pomPath, err)
 	}
 	return nil
@@ -348,14 +346,14 @@ func (j *Builder) buildJar(module *project.Module,
 		for _, dep := range jarPaths {
 			jarName := filepath.Base(dep)
 			classPathEntries = append(classPathEntries, jarName)
-			if err := util.CopyFile(dep, filepath.Join(buildDir, jarName)); err != nil {
+			if err := project.CopyFile(dep, filepath.Join(buildDir, jarName)); err != nil {
 				return err
 			}
 		}
 	}
 
 	// Create JAR arguments
-	jarArgs := tools.JarArgs{
+	jarArgs := JarArgs{
 		JarFile:   jarPath,
 		BaseDir:   buildClasses,
 		Files:     []string{"."}, // Include all files in the base directory
@@ -572,7 +570,7 @@ func (j *Builder) RunTest(module *project.Module) {
 	classPath := strings.Join(compileClasspath, string(os.PathListSeparator))
 	//buildArgsPath := filepath.Join(buildTmpDir, "test-classpath.txt")
 	//buildArgs := fmt.Sprintf("-cp %s\n", classPath)
-	//err = util.WriteFile(buildArgsPath, buildArgs)
+	//err = project.WriteFile(buildArgsPath, buildArgs)
 	//if j.logger.CheckError("writing build args", err) {
 	//	return
 	//}
@@ -582,7 +580,7 @@ func (j *Builder) RunTest(module *project.Module) {
 
 	runner := j.toolProvider.GetRunner()
 
-	runArgs := tools.RunArgs{
+	runArgs := RunArgs{
 		MainClass: "org.junit.platform.console.ConsoleLauncher",
 		ProgramArgs: []string{
 			"execute",

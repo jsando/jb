@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jsando/jb/util"
 	"hash"
 	"io"
 	"os"
@@ -116,13 +115,13 @@ func (l *ModuleLoader) LoadProject(path string) (*Project, *Module, error) {
 		return nil, nil, err
 	}
 	if pathInfo.IsDir() {
-		if util.FileExists(filepath.Join(path, ProjectFilename)) {
+		if FileExists(filepath.Join(path, ProjectFilename)) {
 			project, err = l.internalLoadProject(filepath.Join(path, ProjectFilename))
 			if err != nil {
 				return nil, nil, err
 			}
 			projectSearchDir = path
-		} else if util.FileExists(filepath.Join(path, ModuleFilename)) {
+		} else if FileExists(filepath.Join(path, ModuleFilename)) {
 			module, err = l.GetModule(filepath.Join(path, ModuleFilename))
 			if err != nil {
 				return nil, nil, err
@@ -153,7 +152,7 @@ func (l *ModuleLoader) LoadProject(path string) (*Project, *Module, error) {
 	if project == nil {
 		for {
 			projectPath := filepath.Join(projectSearchDir, ProjectFilename)
-			if util.FileExists(projectPath) {
+			if FileExists(projectPath) {
 				project, err = l.internalLoadProject(projectPath)
 				if err != nil {
 					return nil, nil, err

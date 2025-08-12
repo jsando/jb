@@ -3,16 +3,14 @@ package builder
 import (
 	"encoding/xml"
 	"fmt"
-	"github.com/jsando/jb/java"
 	"github.com/jsando/jb/maven"
 	"github.com/jsando/jb/project"
-	"github.com/jsando/jb/util"
 	"strings"
 )
 
 type moduleBuilder struct {
 	loader       *project.ModuleLoader
-	builder      *java.Builder
+	builder      *Builder
 	project      *project.Project
 	buildModules []*project.Module
 	logger       project.BuildLog
@@ -21,7 +19,7 @@ type moduleBuilder struct {
 func newModuleBuilder(path string, logger project.BuildLog) (*moduleBuilder, error) {
 	builder := &moduleBuilder{
 		loader:       project.NewModuleLoader(),
-		builder:      java.NewBuilder(logger),
+		builder:      NewBuilder(logger),
 		logger:       logger,
 		buildModules: make([]*project.Module, 0),
 	}
@@ -161,7 +159,7 @@ func writePOM(jarPath string, dep *project.Dependency) (string, error) {
 	}
 	xmlHeader := []byte(xml.Header)
 	pomContent := append(xmlHeader, pomXML...)
-	if err := util.WriteFile(pomPath, string(pomContent)); err != nil {
+	if err := project.WriteFile(pomPath, string(pomContent)); err != nil {
 		return "", fmt.Errorf("failed to write POM to %s: %w", pomPath, err)
 	}
 	return pomPath, nil
